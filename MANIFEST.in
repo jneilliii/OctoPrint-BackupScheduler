@@ -1,0 +1,4 @@
+include README.md
+recursive-include octoprint_backupscheduler/templates *
+recursive-include octoprint_backupscheduler/translations *
+recursive-include octoprint_backupscheduler/static *
