@@ -40,22 +40,22 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		if event in ("Startup", "SettingsUpdated") and self._settings.get_boolean(
 				["backup_daily"]) or self._settings.get_boolean(["backup_weekly"]) or self._settings.get_boolean(
 				["backup_monthly"]):
-			self._logger.info("Clearing scheduled jobs.")
+			self._logger.debug("Clearing scheduled jobs.")
 			schedule.clear("backupscheduler")
 			if self._settings.get(["backup_time"]) != "":
-				self._logger.info("Scheduling backup for %s." % self._settings.get(["backup_time"]))
+				self._logger.debug("Scheduling backup for %s." % self._settings.get(["backup_time"]))
 				schedule.every().day.at(self._settings.get(["backup_time"])).do(self._perform_backup).tag(
 					"backupscheduler")
 				if not self._repeatedtimer:
 					self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
 					self._repeatedtimer.start()
 		if event in ("PrintFailed", "PrintDone", "PrintCancelled") and self.backup_pending is True:
-			self._logger.info("Starting backup after print completion.")
+			self._logger.debug("Starting backup after print completion.")
 			self._perform_backup()
 
 	def _perform_backup(self):
 		if self._printer.is_printing():
-			self._logger.info("Skipping backup for now because a print is ongoing")
+			self._logger.debug("Skipping backup for now because a print is ongoing")
 			self.backup_pending = True
 			return
 		if datetime.now().day == self._settings.get_int(["backup_monthly_day"]) and self._settings.get_boolean(
@@ -68,10 +68,10 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				exclusions.append("uploads")
 			if self._settings.get_boolean(["exclude_timelapse"]):
 				exclusions.append("timelapse")
-			self._logger.info("Performing scheduled backup with exclusions: {}.".format(exclusions))
+			self._logger.debug("Performing scheduled backup with exclusions: {}.".format(exclusions))
 			response = requests.post(post_url, json={"exclude": exclusions},
 									 headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
-			self._logger.info(response.text)
+			self._logger.debug(response.text)
 		self.backup_pending = False
 
 	##~~ AssetPlugin mixin
