@@ -4,6 +4,7 @@ from __future__ import absolute_import
 import octoprint.plugin
 from . import schedule
 import requests
+import json
 from datetime import datetime
 from octoprint.util import RepeatedTimer
 
@@ -16,72 +17,127 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 	def __init__(self):
 		self._repeatedtimer = None
 		self.backup_pending = False
+		self.backup_pending_type = []
+		self.current_settings = None
 
-	##~~ SettingsPlugin mixin
+	# ~~ SettingsPlugin mixin
 
 	def get_settings_defaults(self):
 		return dict(
 			installed_version=self._plugin_version,
-			exclude_uploads=False,
-			exclude_timelapse=False,
-			backup_time="",
-			backup_daily=False,
-			backup_weekly=False,
-			backup_weekly_day=7,
-			backup_monthly=False,
-			backup_monthly_day=1,
-			backup_timelapses=False,
-			backup_uploads=False
+			daily={"enabled": False, "time": "", "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			daily_backups=[],
+			weekly={"enabled": False, "time": "", "day": 7, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			weekly_backups=[],
+			monthly={"enabled": False, "time": "", "day": 1, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			monthly_backups=[]
 		)
 
-	##~~ EventHandlerPlugin mixin
+	# ~~ EventHandlerPlugin mixin
 
 	def on_event(self, event, payload):
-		if event in ("Startup", "SettingsUpdated") and self._settings.get_boolean(
-				["backup_daily"]) or self._settings.get_boolean(["backup_weekly"]) or self._settings.get_boolean(
-				["backup_monthly"]):
-			self._logger.debug("Clearing scheduled jobs.")
-			schedule.clear("backupscheduler")
-			if self._settings.get(["backup_time"]) != "":
-				self._logger.debug("Scheduling backup for %s." % self._settings.get(["backup_time"]))
-				schedule.every().day.at(self._settings.get(["backup_time"])).do(self._perform_backup).tag(
-					"backupscheduler")
-				if not self._repeatedtimer:
+		if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone"):
+			return
+		if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
+			if event == "Startup":
+				self.current_settings = {"daily": self._settings.get(["daily"]), "weekly": self._settings.get(["weekly"]), "monthly": self._settings.get(["monthly"])}
+				backups_enabled = False
+				self._logger.debug("Clearing scheduled jobs.")
+				schedule.clear("backupscheduler")
+				if self._settings.get_boolean(["daily", "enabled"]) and self._settings.get(["daily", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling daily backup for %s." % self._settings.get(["daily", "time"]))
+					schedule.every().day.at(self._settings.get(["daily", "time"])).do(self._perform_backup, backup_type="daily_backups").tag("backupscheduler")
+				if self._settings.get_boolean(["weekly", "enabled"]) and self._settings.get(["weekly", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling weekly backup for %s." % self._settings.get(["weekly", "time"]))
+					schedule.every().day.at(self._settings.get(["weekly", "time"])).do(self._perform_backup, backup_type="weekly_backups").tag("backupscheduler")
+				if self._settings.get_boolean(["monthly", "enabled"]) and self._settings.get(["monthly", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling monthly backup for %s." % self._settings.get(["monthly", "time"]))
+					schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup, backup_type="monthly_backups").tag("backupscheduler")
+				if not self._repeatedtimer and backups_enabled is True:
 					self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
 					self._repeatedtimer.start()
-		if event in ("PrintFailed", "PrintDone", "PrintCancelled") and self.backup_pending is True:
-			self._logger.debug("Starting backup after print completion.")
-			self._perform_backup()
+			if event == "SettingsUpdated":
+				if self.current_settings != {"daily": self._settings.get(["daily"]), "weekly": self._settings.get(["weekly"]), "monthly": self._settings.get(["monthly"])}:
+					self._logger.debug("Settings updated.")
+					self.on_event("Startup", {})
+			if event in ("PrintFailed", "PrintDone") and self.backup_pending is True:
+				for backup in self.backup_pending_type:
+					self._logger.debug("Starting {} after print completion.".format(backup))
+					self._perform_backup(backup_type=backup)
 
-	def _perform_backup(self):
+	def _perform_backup(self, backup_type=None):
 		if self._printer.is_printing():
-			self._logger.debug("Skipping backup for now because a print is ongoing")
+			self._logger.debug("Skipping {} for now because a print is ongoing.".format(backup_type))
 			self.backup_pending = True
+			if backup_type != "all" and backup_type not in self.backup_pending_type:
+				self.backup_pending_type.append(backup_type)
 			return
-		if datetime.now().day == self._settings.get_int(["backup_monthly_day"]) and self._settings.get_boolean(
-				["backup_monthly"]) or datetime.now().isoweekday() == self._settings.get_int(
-				["backup_weekly_day"]) and self._settings.get_boolean(["backup_weekly"]) or self._settings.get_boolean(
-				["backup_daily"]):
-			post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._settings.global_get(["server", "port"]))
-			exclusions = []
-			if self._settings.get_boolean(["exclude_uploads"]):
-				exclusions.append("uploads")
-			if self._settings.get_boolean(["exclude_timelapse"]):
-				exclusions.append("timelapse")
-			self._logger.debug("Performing scheduled backup with exclusions: {}.".format(exclusions))
-			response = requests.post(post_url, json={"exclude": exclusions},
-									 headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
-			self._logger.debug(response.text)
+		exclusions = []
+		retention = 0
+		if backup_type == "monthly_backups":
+			if datetime.now().day == self._settings.get_int(["monthly", "day"]) and self._settings.get_boolean(["monthly", "enabled"]):
+				if self._settings.get_boolean(["monthly", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["monthly", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["monthly", "retention"])
+				if "monthly_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("monthly_backups")
+			else:
+				return
+		if backup_type == "weekly_backups":
+			if datetime.now().isoweekday() == self._settings.get_int(["weekly", "day"]) and self._settings.get_boolean(["weekly", "enabled"]):
+				if self._settings.get_boolean(["weekly", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["weekly", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["weekly", "retention"])
+				if "weekly_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("weekly_backups")
+			else:
+				return
+		if backup_type == "daily_backups":
+			if self._settings.get_boolean(["daily", "enabled"]):
+				if self._settings.get_boolean(["daily", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["daily", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["daily", "retention"])
+				if "daily_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("daily_backups")
+			else:
+				return
+		self._logger.debug("Performing {} with exclusions: {}.".format(backup_type, exclusions))
+		post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._settings.global_get(["server", "port"]))
+		response = requests.post(post_url, json={"exclude": exclusions}, headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
+		webresponse = json.loads(response.text)
+		if webresponse["started"] is True:
+			completed_backups = self._settings.get([backup_type])
+			completed_backups.append(webresponse["name"])
+			# do retention check here and delete older backups
+			delete_backups = completed_backups[:-retention]
+			self._logger.debug("Deleting backups: {}".format(delete_backups))
+			for backup in delete_backups:
+				post_url = "http://127.0.0.1:{}/plugin/backup/backup/{}".format(self._settings.global_get(["server", "port"]), backup)
+				response = requests.delete(post_url, headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
+				self._logger.debug(response.status_code)
+			retained_backups = completed_backups[-retention:]
+			self._settings.set([backup_type], retained_backups)
+			self._settings.save(trigger_event=False)
+			self._logger.debug(self._settings.get([backup_type]))
 		self.backup_pending = False
 
-	##~~ AssetPlugin mixin
+	# ~~ AssetPlugin mixin
 
 	def get_assets(self):
 		return dict(
 			js=["js/backupscheduler.js"]
 		)
 
-	##~~ Softwareupdate hook
+	# ~~ Softwareupdate hook
 
 	def get_update_information(self):
 		return dict(
