@@ -2,7 +2,7 @@
 
 This plugin allows you to schedule OctoPrint backups at regular configured intervals. If a print is on going at the time of initializing the backup  the backup will be delayed until the ongoing print is completed, cancelled, or fails.
 
-**WARNING**: This plugin currently does not monitor your disk usage or limit/reduce your backup count in any way.
+**WARNING**: This plugin currently does not monitor your disk usage in any way.
 
 ## Setup
 
@@ -17,7 +17,7 @@ or manually using this URL:
 
 ## To-Do
 
-- [ ] Options for limiting number of backups.
+- [X] ~~Options for limiting number of backups.~~
 
 ## Get Help
 

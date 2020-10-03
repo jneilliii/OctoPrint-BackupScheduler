@@ -4,6 +4,7 @@ from __future__ import absolute_import
 import octoprint.plugin
 from . import schedule
 import requests
+import threading
 import json
 from datetime import datetime
 from octoprint.util import RepeatedTimer
@@ -12,7 +13,8 @@ from octoprint.util import RepeatedTimer
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 							octoprint.plugin.AssetPlugin,
 							octoprint.plugin.TemplatePlugin,
-							octoprint.plugin.EventHandlerPlugin):
+							octoprint.plugin.EventHandlerPlugin,
+							octoprint.plugin.StartupPlugin):
 
 	def __init__(self):
 		self._repeatedtimer = None
@@ -30,8 +32,18 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			weekly={"enabled": False, "time": "", "day": 7, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			weekly_backups=[],
 			monthly={"enabled": False, "time": "", "day": 1, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
-			monthly_backups=[]
+			monthly_backups=[],
+			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			startup_backups=[]
 		)
+
+	# ~~ StartupPlugin mixin
+
+	def on_after_startup(self):
+		if self._settings.get_boolean(["startup", "enabled"]):
+			t = threading.Timer(1, self._perform_backup, kwargs={"backup_type": "startup_backups"})
+			t.daemon = True
+			t.start()
 
 	# ~~ EventHandlerPlugin mixin
 
@@ -108,6 +120,17 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				retention = self._settings.get_int(["daily", "retention"])
 				if "daily_backups" in self.backup_pending_type:
 					self.backup_pending_type.remove("daily_backups")
+			else:
+				return
+		if backup_type == "startup_backups":
+			if self._settings.get_boolean(["startup", "enabled"]):
+				if self._settings.get_boolean(["startup", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["startup", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["startup", "retention"])
+				if "startup_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("startup_backups")
 			else:
 				return
 		self._logger.debug("Performing {} with exclusions: {}.".format(backup_type, exclusions))
