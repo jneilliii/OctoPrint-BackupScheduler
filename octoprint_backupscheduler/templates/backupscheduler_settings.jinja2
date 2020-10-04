@@ -8,10 +8,10 @@
             </label>
         </div>
     </div>
-    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.daily.enabled()">
+    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.daily.enabled(), css: {error: !settingsViewModel.settings.plugins.backupscheduler.daily.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)}">
         <label class="control-label">{{ _('Time of Day') }}</label>
         <div class="controls">
-            <input type="time" class="input-block-level" data-bind="value: settingsViewModel.settings.plugins.backupscheduler.daily.time" title="Time of day to create a backup.">
+            <input type="time" class="input-block-level" data-bind="textInput: settingsViewModel.settings.plugins.backupscheduler.daily.time" title="Time of day to create a backup." placeholder="hh:mm" pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]">
         </div>
     </div>
     <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.daily.enabled()">
@@ -53,10 +53,10 @@
             </select>
         </div>
     </div>
-    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.weekly.enabled()">
+    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.weekly.enabled(), css: {error: !settingsViewModel.settings.plugins.backupscheduler.weekly.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)}">
         <label class="control-label">{{ _('Time of Day') }}</label>
         <div class="controls">
-            <input type="time" class="input-block-level" data-bind="value: settingsViewModel.settings.plugins.backupscheduler.weekly.time" title="Time of day to create a backup.">
+            <input type="time" class="input-block-level" data-bind="textInput: settingsViewModel.settings.plugins.backupscheduler.weekly.time" title="Time of day to create a backup." placeholder="hh:mm" pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]">
         </div>
     </div>
     <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.weekly.enabled()">
@@ -90,10 +90,10 @@
             <input type="number" class="input-block-level" min="1" max="31" data-bind="value: settingsViewModel.settings.plugins.backupscheduler.monthly.day" title="Day of month to create a backup.">
         </div>
     </div>
-    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.monthly.enabled()">
+    <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.monthly.enabled(), css: {error: !settingsViewModel.settings.plugins.backupscheduler.monthly.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)}">
         <label class="control-label">{{ _('Time of Day') }}</label>
         <div class="controls">
-            <input type="time" class="input-block-level" data-bind="value: settingsViewModel.settings.plugins.backupscheduler.monthly.time" title="Time of day to create a backup.">
+            <input type="time" class="input-block-level" data-bind="textInput: settingsViewModel.settings.plugins.backupscheduler.monthly.time" title="Time of day to create a backup." placeholder="hh:mm" pattern="([01]?[0-9]|2[0-3]):[0-5][0-9]">
         </div>
     </div>
     <div class="control-group span3" data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.monthly.enabled()">
