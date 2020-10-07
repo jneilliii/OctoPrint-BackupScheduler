@@ -13,4 +13,4 @@ jobs:
         with:
           manifest: .github/labels.yml 
           token: ${{ secrets.PERSONAL_TOKEN }}
-          repository: ${{ github.repository }}
+          repository: jneilliii/github_management
