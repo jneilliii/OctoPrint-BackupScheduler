@@ -13,6 +13,18 @@ $(function() {
         self.show_time = ko.pureComputed(function(){
             return self.settingsViewModel.settings.plugins.backupscheduler.backup_daily() || self.settingsViewModel.settings.plugins.backupscheduler.backup_weekly() || self.settingsViewModel.settings.plugins.backupscheduler.backup_monthly()
         })
+
+        self.onSettingsBeforeSave = function(){
+            if(!self.settingsViewModel.settings.plugins.backupscheduler.daily.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)){
+                self.settingsViewModel.settings.plugins.backupscheduler.daily.time('00:00')
+            }
+            if(!self.settingsViewModel.settings.plugins.backupscheduler.weekly.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)){
+                self.settingsViewModel.settings.plugins.backupscheduler.weekly.time('00:00')
+            }
+            if(!self.settingsViewModel.settings.plugins.backupscheduler.monthly.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)){
+                self.settingsViewModel.settings.plugins.backupscheduler.monthly.time('00:00')
+            }
+        }
     }
 
     OCTOPRINT_VIEWMODELS.push({
