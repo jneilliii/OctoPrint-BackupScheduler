@@ -29,9 +29,11 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			installed_version=self._plugin_version,
 			daily={"enabled": False, "time": "", "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			daily_backups=[],
-			weekly={"enabled": False, "time": "", "day": 7, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			weekly={"enabled": False, "time": "", "day": 7, "retention": 1, "exclude_uploads": False,
+					"exclude_timelapse": False},
 			weekly_backups=[],
-			monthly={"enabled": False, "time": "", "day": 1, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+			monthly={"enabled": False, "time": "", "day": 1, "retention": 1, "exclude_uploads": False,
+					 "exclude_timelapse": False},
 			monthly_backups=[],
 			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			startup_backups=[]
@@ -50,29 +52,40 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 	def on_event(self, event, payload):
 		if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone"):
 			return
-		if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
+		if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(
+				["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
 			if event == "Startup":
-				self.current_settings = {"daily": self._settings.get(["daily"]), "weekly": self._settings.get(["weekly"]), "monthly": self._settings.get(["monthly"])}
+				self.current_settings = {"daily": self._settings.get(["daily"]),
+										 "weekly": self._settings.get(["weekly"]),
+										 "monthly": self._settings.get(["monthly"])}
 				backups_enabled = False
 				self._logger.debug("Clearing scheduled jobs.")
 				schedule.clear("backupscheduler")
 				if self._settings.get_boolean(["daily", "enabled"]) and self._settings.get(["daily", "time"]) != "":
 					backups_enabled = True
 					self._logger.debug("Scheduling daily backup for %s." % self._settings.get(["daily", "time"]))
-					schedule.every().day.at(self._settings.get(["daily", "time"])).do(self._perform_backup, backup_type="daily_backups").tag("backupscheduler")
+					schedule.every().day.at(self._settings.get(["daily", "time"])).do(self._perform_backup,
+																					  backup_type="daily_backups").tag(
+						"backupscheduler")
 				if self._settings.get_boolean(["weekly", "enabled"]) and self._settings.get(["weekly", "time"]) != "":
 					backups_enabled = True
 					self._logger.debug("Scheduling weekly backup for %s." % self._settings.get(["weekly", "time"]))
-					schedule.every().day.at(self._settings.get(["weekly", "time"])).do(self._perform_backup, backup_type="weekly_backups").tag("backupscheduler")
+					schedule.every().day.at(self._settings.get(["weekly", "time"])).do(self._perform_backup,
+																					   backup_type="weekly_backups").tag(
+						"backupscheduler")
 				if self._settings.get_boolean(["monthly", "enabled"]) and self._settings.get(["monthly", "time"]) != "":
 					backups_enabled = True
 					self._logger.debug("Scheduling monthly backup for %s." % self._settings.get(["monthly", "time"]))
-					schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup, backup_type="monthly_backups").tag("backupscheduler")
+					schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup,
+																						backup_type="monthly_backups").tag(
+						"backupscheduler")
 				if not self._repeatedtimer and backups_enabled is True:
 					self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
 					self._repeatedtimer.start()
 			if event == "SettingsUpdated":
-				if self.current_settings != {"daily": self._settings.get(["daily"]), "weekly": self._settings.get(["weekly"]), "monthly": self._settings.get(["monthly"])}:
+				if self.current_settings != {"daily": self._settings.get(["daily"]),
+											 "weekly": self._settings.get(["weekly"]),
+											 "monthly": self._settings.get(["monthly"])}:
 					self._logger.debug("Settings updated.")
 					self.on_event("Startup", {})
 			if event in ("PrintFailed", "PrintDone") and self.backup_pending is True:
@@ -90,7 +103,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		exclusions = []
 		retention = 0
 		if backup_type == "monthly_backups":
-			if datetime.now().day == self._settings.get_int(["monthly", "day"]) and self._settings.get_boolean(["monthly", "enabled"]):
+			if datetime.now().day == self._settings.get_int(["monthly", "day"]) and self._settings.get_boolean(
+					["monthly", "enabled"]):
 				if self._settings.get_boolean(["monthly", "exclude_uploads"]):
 					exclusions.append("uploads")
 				if self._settings.get_boolean(["monthly", "exclude_timelapse"]):
@@ -101,7 +115,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			else:
 				return
 		if backup_type == "weekly_backups":
-			if datetime.now().isoweekday() == self._settings.get_int(["weekly", "day"]) and self._settings.get_boolean(["weekly", "enabled"]):
+			if datetime.now().isoweekday() == self._settings.get_int(["weekly", "day"]) and self._settings.get_boolean(
+					["weekly", "enabled"]):
 				if self._settings.get_boolean(["weekly", "exclude_uploads"]):
 					exclusions.append("uploads")
 				if self._settings.get_boolean(["weekly", "exclude_timelapse"]):
@@ -135,7 +150,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				return
 		self._logger.debug("Performing {} with exclusions: {}.".format(backup_type, exclusions))
 		post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._settings.global_get(["server", "port"]))
-		response = requests.post(post_url, json={"exclude": exclusions}, headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
+		response = requests.post(post_url, json={"exclude": exclusions},
+								 headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
 		webresponse = json.loads(response.text)
 		if webresponse["started"] is True:
 			completed_backups = self._settings.get([backup_type])
@@ -144,7 +160,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			delete_backups = completed_backups[:-retention]
 			self._logger.debug("Deleting backups: {}".format(delete_backups))
 			for backup in delete_backups:
-				post_url = "http://127.0.0.1:{}/plugin/backup/backup/{}".format(self._settings.global_get(["server", "port"]), backup)
+				post_url = "http://127.0.0.1:{}/plugin/backup/backup/{}".format(
+					self._settings.global_get(["server", "port"]), backup)
 				response = requests.delete(post_url, headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
 				self._logger.debug(response.status_code)
 			retained_backups = completed_backups[-retention:]
@@ -173,7 +190,16 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				user="jneilliii",
 				repo="OctoPrint-BackupScheduler",
 				current=self._plugin_version,
-
+				stable_branch=dict(
+					name="Stable", branch="master", comittish=["master"]
+				),
+				prerelease_branches=[
+					dict(
+						name="Release Candidate",
+						branch="rc",
+						comittish=["rc", "master"],
+					)
+				],
 				# update method: pip
 				pip="https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/{target_version}.zip"
 			)
