@@ -4,6 +4,8 @@ This plugin allows you to schedule OctoPrint backups at regular configured inter
 
 **WARNING**: This plugin currently does not monitor your disk usage in any way.
 
+**NOTE**: The time settings are based on the device's local time that OctoPrint is running on. For octopi users use `sudo raspi-config` to set your time and appropriate timezone.
+
 ## Setup
 
 Install via the bundled [Plugin Manager](https://docs.octoprint.org/en/master/bundledplugins/pluginmanager.html)
