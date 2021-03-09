@@ -21,6 +21,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending = False
 		self.backup_pending_type = []
 		self.current_settings = None
+		self._server_port = None
 
 	# ~~ SettingsPlugin mixin
 
@@ -40,6 +41,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		)
 
 	# ~~ StartupPlugin mixin
+
+	def on_startup(self, host, port):
+		self._server_port = port
 
 	def on_after_startup(self):
 		if self._settings.get_boolean(["startup", "enabled"]):
@@ -149,7 +153,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			else:
 				return
 		self._logger.debug("Performing {} with exclusions: {}.".format(backup_type, exclusions))
-		post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._settings.global_get(["server", "port"]))
+		post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._server_port)
 		response = requests.post(post_url, json={"exclude": exclusions},
 								 headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
 		webresponse = json.loads(response.text)
