@@ -1,11 +1,11 @@
 # coding=utf-8
 from __future__ import absolute_import
 
+import logging
+
 import octoprint.plugin
 from . import schedule
-import requests
 import threading
-import json
 from datetime import datetime
 from octoprint.util import RepeatedTimer
 
@@ -21,7 +21,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending = False
 		self.backup_pending_type = []
 		self.current_settings = None
-		self._server_port = None
+		self.backup_helpers = None
 
 	# ~~ SettingsPlugin mixin
 
@@ -42,10 +42,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
 	# ~~ StartupPlugin mixin
 
-	def on_startup(self, host, port):
-		self._server_port = port
-
 	def on_after_startup(self):
+		# can this be moved to plugin_load or init to prevent additional processing?
+		self.backup_helpers = self._plugin_manager.get_helpers("backup", "create_backup", "delete_backup")
+		if "create_backup" not in self.backup_helpers or "delete_backup" not in self.backup_helpers:
+			self._logger.info("Missing backup helpers, aborting.")
+			return
 		if self._settings.get_boolean(["startup", "enabled"]):
 			t = threading.Timer(1, self._perform_backup, kwargs={"backup_type": "startup_backups"})
 			t.daemon = True
@@ -152,26 +154,22 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 					self.backup_pending_type.remove("startup_backups")
 			else:
 				return
-		self._logger.debug("Performing {} with exclusions: {}.".format(backup_type, exclusions))
-		post_url = "http://127.0.0.1:{}/plugin/backup/backup".format(self._server_port)
-		response = requests.post(post_url, json={"exclude": exclusions},
-								 headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
-		webresponse = json.loads(response.text)
-		if webresponse["started"] is True:
-			completed_backups = self._settings.get([backup_type])
-			completed_backups.append(webresponse["name"])
-			# do retention check here and delete older backups
-			delete_backups = completed_backups[:-retention]
-			self._logger.debug("Deleting backups: {}".format(delete_backups))
-			for backup in delete_backups:
-				post_url = "http://127.0.0.1:{}/plugin/backup/backup/{}".format(
-					self._settings.global_get(["server", "port"]), backup)
-				response = requests.delete(post_url, headers={"X-Api-Key": self._settings.global_get(["api", "key"])})
-				self._logger.debug(response.status_code)
-			retained_backups = completed_backups[-retention:]
-			self._settings.set([backup_type], retained_backups)
-			self._settings.save(trigger_event=False)
-			self._logger.debug(self._settings.get([backup_type]))
+
+		instance_name = self._settings.global_get(["appearance", "name"]) or "octoprint"
+		backup_filename = "{}-{}-{:%Y%m%d%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""), datetime.now())
+		self._logger.debug("Performing {} with exclusions: {} as {}.".format(backup_type, exclusions, backup_filename))
+		self.backup_helpers["create_backup"](exclude=exclusions, filename=backup_filename)
+		completed_backups = self._settings.get([backup_type])
+		completed_backups.append(backup_filename)
+		# do retention check here and delete older backups
+		delete_backups = completed_backups[:-retention]
+		self._logger.debug("Deleting backups: {}".format(delete_backups))
+		for backup in delete_backups:
+			self.backup_helpers["delete_backup"](backup)
+		retained_backups = completed_backups[-retention:]
+		self._settings.set([backup_type], retained_backups)
+		self._settings.save(trigger_event=False)
+		self._logger.debug(self._settings.get([backup_type]))
 		self.backup_pending = False
 
 	# ~~ AssetPlugin mixin
@@ -213,6 +211,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 __plugin_name__ = "Backup Scheduler"
 __plugin_pythoncompat__ = ">=2.7,<4"
 
+def __plugin_check__():
+	from octoprint.util.version import is_octoprint_compatible
+	compatible = is_octoprint_compatible(">=1.6.0")
+	if not compatible:
+		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.6.0+")
+	return compatible
 
 def __plugin_load__():
 	global __plugin_implementation__
