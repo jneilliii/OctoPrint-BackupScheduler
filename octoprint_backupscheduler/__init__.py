@@ -156,7 +156,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				return
 
 		instance_name = self._settings.global_get(["appearance", "name"]) or "octoprint"
-		backup_filename = "{}-{}-{:%Y%m%d%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""), datetime.now())
+		backup_filename = "{}-{}-{:%Y%m%d-%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""), datetime.now())
 		self._logger.debug("Performing {} with exclusions: {} as {}.".format(backup_type, exclusions, backup_filename))
 		self.backup_helpers["create_backup"](exclude=exclusions, filename=backup_filename)
 		completed_backups = self._settings.get([backup_type])
