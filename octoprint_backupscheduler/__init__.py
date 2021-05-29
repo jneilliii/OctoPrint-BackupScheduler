@@ -7,7 +7,7 @@ import requests
 import threading
 import json
 from datetime import datetime
-from octoprint.util import RepeatedTimer
+from octoprint.util import RepeatedTimer, version
 
 
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
@@ -184,8 +184,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 	# ~~ Softwareupdate hook
 
 	def get_update_information(self):
-		return dict(
-			backupscheduler=dict(
+		data = dict(
 				displayName="Backup Scheduler",
 				displayVersion=self._plugin_version,
 
@@ -207,7 +206,13 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				# update method: pip
 				pip="https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/{target_version}.zip"
 			)
-		)
+
+		# if octoprint version is less than 1.6.0, lock update check to specific branch
+		if not version.is_octoprint_compatible(">=1.6.0"):
+			data['type'] = 'github_commit'
+			data['branch'] = '0.0.6'
+
+		return dict(backupscheduler=data)
 
 
 __plugin_name__ = "Backup Scheduler"
