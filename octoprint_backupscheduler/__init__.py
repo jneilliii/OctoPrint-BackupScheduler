@@ -216,13 +216,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 __plugin_name__ = "Backup Scheduler"
 __plugin_pythoncompat__ = ">=2.7,<4"
 
-# to be added back in at a later date once time has passed for version 0.0.6 to distribute.
-# def __plugin_check__():
-# 	from octoprint.util.version import is_octoprint_compatible
-# 	compatible = is_octoprint_compatible(">=1.6.0")
-# 	if not compatible:
-# 		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.6.0+")
-# 	return compatible
+def __plugin_check__():
+	from octoprint.util.version import is_octoprint_compatible
+	compatible = is_octoprint_compatible(">=1.6.0")
+	if not compatible:
+		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.6.0+")
+	return compatible
 
 def __plugin_load__():
 	global __plugin_implementation__
