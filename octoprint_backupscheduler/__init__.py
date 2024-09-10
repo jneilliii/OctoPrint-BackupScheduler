@@ -8,6 +8,7 @@ from . import schedule
 import threading
 from datetime import datetime
 from octoprint.util import RepeatedTimer, version
+import os
 
 
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
@@ -21,7 +22,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending = False
 		self.backup_pending_type = []
 		self.current_settings = None
-		self.backup_helpers = None
+		self.backup_helpers = None		
 
 	# ~~ SettingsPlugin mixin
 
@@ -37,7 +38,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 					 "exclude_timelapse": False},
 			monthly_backups=[],
 			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
-			startup_backups=[]
+			startup_backups=[],
+			check_mount=False
 		)
 
 	# ~~ StartupPlugin mixin
@@ -106,6 +108,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			if backup_type != "all" and backup_type not in self.backup_pending_type:
 				self.backup_pending_type.append(backup_type)
 			return
+		if self._settings.get_boolean(["check_mount"]):		
+			datafolder = os.path.join(self._plugin_manager.plugin_implementations["backup"]._settings.getBaseFolder("data"), "backup")
+			if not os.path.ismount(datafolder):
+				self._logger.debug("Skipping {} because there is no mount.".format(backup_type))
+				self._sendNotificationToClient("no_mount")
+				return
 		exclusions = []
 		retention = 0
 		if backup_type == "monthly_backups":
@@ -172,6 +180,33 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self._logger.debug(self._settings.get([backup_type]))
 		self.backup_pending = False
 
+
+	# ~~ Client notifications
+
+    # sends the data-dictonary to the client/browser
+	def _sendDataToClient(self, eventID, dataDict = dict()):
+		dataDict["eventID"] = eventID
+		self._plugin_manager.send_plugin_message(self._identifier, dataDict)
+
+
+    #send notification to client/browser
+	def _sendNotificationToClient(self, notifyMessageID):
+		self._logger.debug("Plugin message: {}".format(notifyMessageID))
+		self._plugin_manager.send_plugin_message(self._identifier, dict(notifyMessageID=notifyMessageID))
+
+	# ~~ BackupPlugin hooks
+	#TODO: Trigger abort in OctoPrint backup plugin in general to avoid SD writes - actuall not possible
+	# def before_backup(self):
+	# 	settings = octoprint.plugin.plugin_settings_for_settings_plugin(
+	# 		"backup", self
+	# 	)
+	# 	datafolder = os.path.join(settings.getBaseFolder("data"), "backup")
+	# 	if self._settings.get_boolean("check_mount"):
+	# 		if not os.path.ismount(datafolder):
+	# 			#create error message
+	# 			return
+
+
 	# ~~ AssetPlugin mixin
 
 	def get_assets(self):
@@ -230,4 +265,5 @@ def __plugin_load__():
 	global __plugin_hooks__
 	__plugin_hooks__ = {
 		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information
+  		#"octoprint.plugin.backup.before_backup": __plugin_implementation__.before_backup
 	}
