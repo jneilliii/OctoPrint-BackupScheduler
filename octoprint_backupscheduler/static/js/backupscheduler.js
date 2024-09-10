@@ -45,8 +45,8 @@ $(function () {
                 switch (data.notifyMessageID) {
                     case "no_mount":
                         new PNotify({
-                            title: "Backup failed",
-                            text: "Backup failed as the mount was missing!",
+                            title: gettext("Backup failed"),
+                            text: gettext("Backup failed as the mount was missing!"),
                             type: "error",
                             hide: false
                         });
