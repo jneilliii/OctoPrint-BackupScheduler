@@ -13,6 +13,8 @@ $(function () {
         self.show_time = ko.pureComputed(function () {
             return self.settingsViewModel.settings.plugins.backupscheduler.backup_daily() || self.settingsViewModel.settings.plugins.backupscheduler.backup_weekly() || self.settingsViewModel.settings.plugins.backupscheduler.backup_monthly()
         })
+        self.sendTestEmailRunning = ko.observable(false);
+
 
         self.onSettingsBeforeSave = function () {
             if (!self.settingsViewModel.settings.plugins.backupscheduler.daily.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)) {
@@ -29,6 +31,7 @@ $(function () {
         // receive data from server
         self.onDataUpdaterPluginMessage = function (plugin, data) {
             // NotificationMessages
+            debugger
             if (data.notifyType) {
                 var notfiyType = data.notifyType;
                 var notifyTitle = data.notifyTitle;
@@ -51,9 +54,46 @@ $(function () {
                             hide: false
                         });
                         break;
+                    case "backup_failed":
+                        new PNotify({
+                            title: gettext("Backup failed"),
+                            text: gettext("Backup failed! Please check, why the backup could not be created!"),
+                            type: "error",
+                            hide: false
+                        });
+                        break;
                 }
             }
         }
+
+        // Send an Email to test settings
+        self.sendTestEmail = function () {
+            self.sendTestEmailRunning(true);
+            $.ajax({
+                url: API_BASEURL + "plugin/backupscheduler",
+                type: "POST",
+                dataType: "json",
+                data: JSON.stringify({
+                    command: "sendTestEmail"
+                }),
+                contentType: "application/json; charset=UTF-8"
+            }).done(function (data) {
+                for (key in data) {
+                    // if(data[key].length){
+                    // 	self.crawl_results.push({name: ko.observable(key), files: ko.observableArray(data[key])});
+                    // }
+                }
+
+                console.log(data);
+                // if(self.crawl_results().length === 0){
+                // 	self.crawl_results.push({name: ko.observable('No convertible files found'), files: ko.observableArray([])});
+                // }
+                // self.filesViewModel.requestData({force: true});
+                self.sendTestEmailRunning(false);
+            }).fail(function (data) {
+                self.sendTestEmailRunning(false);
+            });
+        };
     }
 
     OCTOPRINT_VIEWMODELS.push({

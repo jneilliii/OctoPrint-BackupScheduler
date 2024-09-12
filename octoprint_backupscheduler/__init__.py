@@ -9,12 +9,16 @@ import threading
 from datetime import datetime
 from octoprint.util import RepeatedTimer, version
 import os
-
+import smtplib
+from smtplib import *
+from email.mime.text import MIMEText
+from flask_babel import gettext
 
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 							octoprint.plugin.AssetPlugin,
 							octoprint.plugin.TemplatePlugin,
 							octoprint.plugin.EventHandlerPlugin,
+							octoprint.plugin.SimpleApiPlugin,
 							octoprint.plugin.StartupPlugin):
 
 	def __init__(self):
@@ -39,7 +43,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			monthly_backups=[],
 			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			startup_backups=[],
-			check_mount=False
+			check_mount=False,
+   			send_email={"enabled": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "receiver": ""}
 		)
 
 	# ~~ StartupPlugin mixin
@@ -113,6 +118,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			if not os.path.ismount(datafolder):
 				self._logger.debug("Skipping {} because there is no mount.".format(backup_type))
 				self._sendNotificationToClient("no_mount")
+				if self._settings.get_boolean(["send_email", "enabled"]):
+					#TODO: better text
+					self._sendEmailNotification("OctoPrint Backup failed: Mount was missing!", "OctoPrint Backup failed: Mount was missing!")
 				return
 		exclusions = []
 		retention = 0
@@ -181,19 +189,6 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending = False
 
 
-	# ~~ Client notifications
-
-    # sends the data-dictonary to the client/browser
-	def _sendDataToClient(self, eventID, dataDict = dict()):
-		dataDict["eventID"] = eventID
-		self._plugin_manager.send_plugin_message(self._identifier, dataDict)
-
-
-    #send notification to client/browser
-	def _sendNotificationToClient(self, notifyMessageID):
-		self._logger.debug("Plugin message: {}".format(notifyMessageID))
-		self._plugin_manager.send_plugin_message(self._identifier, dict(notifyMessageID=notifyMessageID))
-
 	# ~~ BackupPlugin hooks
 	#TODO: Trigger abort in OctoPrint backup plugin in general to avoid SD writes - actuall not possible
 	# def before_backup(self):
@@ -206,6 +201,80 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 	# 			#create error message
 	# 			return
 
+	def after_backup(self, error):
+		if error:
+			self._sendNotificationToClient("backup_failed")
+			if self._settings.get_boolean(["send_email", "enabled"]):
+				#TODO noch ein paar mehr Infos einbauen
+				self._sendEmailNotification("OctoPrint Backup failed", "OctoPrint Backup failed")
+
+	# ~~ Client notifications
+
+	# sends the data-dictonary to the client/browser
+	def _sendDataToClient(self, eventID, dataDict = dict()):
+		dataDict["eventID"] = eventID
+		self._plugin_manager.send_plugin_message(self._identifier, dataDict)
+
+	#send notification to client/browser
+	def _sendNotificationToClient(self, notifyMessageID):
+		self._logger.debug("Plugin message: {}".format(notifyMessageID))
+		self._plugin_manager.send_plugin_message(self._identifier, dict(notifyMessageID=notifyMessageID))
+
+	def _sendEmailNotification(self, subject, body):
+		# Create the message		
+		msg = MIMEText(body)
+		msg['Subject'] = subject
+		msg['From'] = self._settings.get(["send_email", "sender"])
+		msg['To'] = self._settings.get(["send_email", "receiver"])
+		# Send the message via an SMTP server
+		try:
+			if self._settings.get_boolean(["send_email", "smtp_tls"]):
+				server =  smtplib.SMTP_SSL()
+			else:
+				server =  smtplib.SMTP()
+			server.connect(self._settings.get(["send_email", "smtp_server"]), self._settings.get_int(["send_email", "smtp_port"]))
+			server.ehlo()
+			if self._settings.get(["send_email", "smtp_user"]) != "":
+				server.login(self._settings.get(["send_email", "smtp_user"]), self._settings.get(["send_email", "smtp_password"]))
+			try:
+				server.sendmail(msg['From'], msg['To'], msg.as_string())
+			finally:
+				server.quit()
+		except SMTPResponseException as e:
+			error_code = str(e.smtp_code)
+			error_message = e.smtp_error
+			self._logger.error(error_code + " - " + error_message)
+			data = {}
+			data["notifyTitel"] = gettext("SMTP Error")
+			data["notifyText"] = str(error_code) + " - " + error_message
+			data["notifyType"] = "error"
+			data["notifyHide"] = False					
+			self._sendDataToClient("smtp_error", data)
+		except ConnectionError as e:
+			error_code = str(e.errno)
+			error_message = e.strerror
+			self._logger.error(error_code + " - " + error_message)
+			data = {}
+			data["notifyTitel"] = gettext("SMTP Error")
+			data["notifyText"] = str(error_code) + " - " + error_message
+			data["notifyType"] = "error"
+			data["notifyHide"] = False					
+			self._sendDataToClient("smtp_error", data)
+
+	def get_api_commands(self):
+		return {'sendTestEmail': []}
+
+	def on_api_command(self, command, data):
+		import flask
+		from octoprint.server import user_permission
+		if not user_permission.can():
+			return flask.make_response("Insufficient rights", 403)
+
+		if command == "sendTestEmail":
+			self._logger.debug("Send an Email to test settings.")
+			self._sendEmailNotification("OctoPrint Backup: Testmessage", "OctoPrint Backup: Testmessage")
+			# return flask.jsonify(results)
+		
 
 	# ~~ AssetPlugin mixin
 
@@ -264,6 +333,7 @@ def __plugin_load__():
 
 	global __plugin_hooks__
 	__plugin_hooks__ = {
-		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information
+		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
+  		"octoprint.plugin.backup.after_backup": __plugin_implementation__.after_backup
   		#"octoprint.plugin.backup.before_backup": __plugin_implementation__.before_backup
 	}
