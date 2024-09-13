@@ -9,12 +9,9 @@ $(function () {
         var self = this;
 
         self.settingsViewModel = parameters[0];
-        self.cert_saved = ko.observable(false);
-        self.show_time = ko.pureComputed(function () {
-            return self.settingsViewModel.settings.plugins.backupscheduler.backup_daily() || self.settingsViewModel.settings.plugins.backupscheduler.backup_weekly() || self.settingsViewModel.settings.plugins.backupscheduler.backup_monthly()
-        })
         self.sendTestEmailRunning = ko.observable(false);
 
+        //send retained notification
         self.onStartupComplete = function () {
             if (self.settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID() !== "") {
                 self.onDataUpdaterPluginMessage(plugin, { notifyMessageID: self.settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID() })
