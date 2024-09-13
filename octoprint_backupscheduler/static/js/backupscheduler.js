@@ -15,6 +15,11 @@ $(function () {
         })
         self.sendTestEmailRunning = ko.observable(false);
 
+        self.onStartupComplete = function () {
+            if (self.settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID() !== "") {
+                self.onDataUpdaterPluginMessage(plugin, { notifyMessageID: self.settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID() })
+            }
+        }
 
         self.onSettingsBeforeSave = function () {
             if (!self.settingsViewModel.settings.plugins.backupscheduler.daily.time().match(/([01]?[0-9]|2[0-3]):[0-5][0-9]/)) {
@@ -31,7 +36,6 @@ $(function () {
         // receive data from server
         self.onDataUpdaterPluginMessage = function (plugin, data) {
             // NotificationMessages
-            debugger
             if (data.notifyType) {
                 var notfiyType = data.notifyType;
                 var notifyTitle = data.notifyTitle;
@@ -49,7 +53,7 @@ $(function () {
                     case "no_mount":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Backup failed as the mount was missing!"),
+                            text: gettext("Last Backup failed because of a missing mount! Please check why the mount was missing or reset retained flag!"),
                             type: "error",
                             hide: false
                         });
@@ -57,7 +61,7 @@ $(function () {
                     case "backup_failed":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Backup failed! Please check, why the backup could not be created!"),
+                            text: gettext("Last Backup failed! Issues caused inside OctoPrint. Please check why the backup could not be created or reset retained flag!"),
                             type: "error",
                             hide: false
                         });
@@ -93,6 +97,10 @@ $(function () {
             }).fail(function (data) {
                 self.sendTestEmailRunning(false);
             });
+        };
+
+        self.resetRetainedNotifyMessageID = function () {
+            self.settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID("");
         };
     }
 

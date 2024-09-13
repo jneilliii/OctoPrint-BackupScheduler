@@ -44,7 +44,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			startup_backups=[],
 			check_mount=False,
-   			send_email={"enabled": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "receiver": ""}
+   			send_email={"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "receiver": ""},
+			notification={"enabled": True, "retainedNotifyMessageID": ""}
 		)
 
 	# ~~ StartupPlugin mixin
@@ -114,13 +115,13 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				self.backup_pending_type.append(backup_type)
 			return
 		if self._settings.get_boolean(["check_mount"]):		
-			datafolder = os.path.join(self._plugin_manager.plugin_implementations["backup"]._settings.getBaseFolder("data"), "backup")
-			if not os.path.ismount(datafolder):
+			backup_folder = os.path.join(self._settings.getBaseFolder("data"), "backup")
+			if not os.path.ismount(backup_folder):
 				self._logger.debug("Skipping {} because there is no mount.".format(backup_type))
-				self._sendNotificationToClient("no_mount")
+				self._sendNotificationToClient("no_mount", True)
 				if self._settings.get_boolean(["send_email", "enabled"]):
-					#TODO: better text
-					self._sendEmailNotification("OctoPrint Backup failed: Mount was missing!", "OctoPrint Backup failed: Mount was missing!")
+					body = self._loadFileWithPlaceholders("no_mount.html", {"backup_folder": backup_folder})
+					self._sendEmailNotification("OctoPrint Backup failed: Mount was missing!", body)
 				return
 		exclusions = []
 		retention = 0
@@ -190,6 +191,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
 
 	# ~~ BackupPlugin hooks
+
 	#TODO: Trigger abort in OctoPrint backup plugin in general to avoid SD writes - actuall not possible
 	# def before_backup(self):
 	# 	settings = octoprint.plugin.plugin_settings_for_settings_plugin(
@@ -203,10 +205,17 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
 	def after_backup(self, error):
 		if error:
-			self._sendNotificationToClient("backup_failed")
+			self._sendNotificationToClient("backup_failed", True)
 			if self._settings.get_boolean(["send_email", "enabled"]):
 				#TODO noch ein paar mehr Infos einbauen
-				self._sendEmailNotification("OctoPrint Backup failed", "OctoPrint Backup failed")
+				self._settings.get_plugin_data_folder()
+				body = self._loadFileWithPlaceholders("backup_failed.html")
+				self._sendEmailNotification("OctoPrint Backup failed", body)
+		elif self._settings.get_boolean(["send_email", "send_successful"]):
+			body = self._loadFileWithPlaceholders("backup_successful.html")
+			self._sendEmailNotification("OctoPrint Backup successful", body)
+			self._settings.set(["send_email", "retainedNotifyMessageID"], "")
+
 
 	# ~~ Client notifications
 
@@ -216,13 +225,26 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self._plugin_manager.send_plugin_message(self._identifier, dataDict)
 
 	#send notification to client/browser
-	def _sendNotificationToClient(self, notifyMessageID):
+	def _sendNotificationToClient(self, notifyMessageID, retain = False):
 		self._logger.debug("Plugin message: {}".format(notifyMessageID))
+		if retain:
+			self._settings.set(["notification", "retainedNotifyMessageID"], notifyMessageID)
+			self._settings.save()
 		self._plugin_manager.send_plugin_message(self._identifier, dict(notifyMessageID=notifyMessageID))
 
+	# Load html-template files for mails - {{placeholder}} format for replacement
+	def _loadFileWithPlaceholders(self, filename, placeholders = dict()):
+		returnText = ""
+		file = os.path.join(self._basefolder, "static", "mailtmpl", filename)
+		with open(file, 'r', encoding='utf-8') as f:
+			for row in f:
+				returnText += row
+			for key, value in placeholders.items():
+				returnText = returnText.replace("{{" + key + "}}", value)
+		return returnText
+
 	def _sendEmailNotification(self, subject, body):
-		# Create the message		
-		msg = MIMEText(body)
+		msg = MIMEText(body, "html")
 		msg['Subject'] = subject
 		msg['From'] = self._settings.get(["send_email", "sender"])
 		msg['To'] = self._settings.get(["send_email", "receiver"])
