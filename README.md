@@ -13,13 +13,22 @@ or manually using this URL:
 
     https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/master.zip
 
+Why is there a feature to check a mount? The problem is that flash memory segments wear out after a fairly low number of erase cycles, and the SD card’s wear-leveling algorithm will eventually cordon off enough of the card to cause file system issues. As the backup plugin writes repeatingly to the SD card and also all backups are also lost if the SD card is broken it is important to offload the backup to e.g. a NAS. With a NFS mount the backups are directly written to a share, avoiding both issues in one step.
+
+The backup folder is located on OctoPrints base directory/data/backup.
+
+```
+pi@octopi:~/.octoprint/data/backup $ ls
+octoprint-weekly-20240903-050053.zip  octoprint-weekly-20240910-050059.zip
+```
+
+[How to mount a NFS share.](https://www.google.de/search?q=mount+a+NFS+share+in+raspian)
+
 ## Settings
 
 ![screenshot](screenshot_settings.png)
 
-## To-Do
-
-- [X] ~~Options for limiting number of backups.~~
+![screenshot_mount_notification](screenshot_settings_mount_notification.png)
 
 ## Get Help
 
@@ -47,4 +56,3 @@ I, jneilliii, programmed this plugin for fun and do my best effort to support th
 
 You can use [this](https://www.paypal.com/cgi-bin/webscr?cmd=_xclick&business=jneilliii@gmail.com) link too. But the normal PayPal fee will be deducted.
 </small>
-

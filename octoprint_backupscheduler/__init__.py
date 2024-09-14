@@ -26,7 +26,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending = False
 		self.backup_pending_type = []
 		self.current_settings = None
-		self.backup_helpers = None		
+		self.backup_helpers = None
 
 	# ~~ SettingsPlugin mixin
 
@@ -114,7 +114,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			if backup_type != "all" and backup_type not in self.backup_pending_type:
 				self.backup_pending_type.append(backup_type)
 			return
-		if self._settings.get_boolean(["check_mount"]):		
+		if self._settings.get_boolean(["check_mount"]):
 			backup_folder = os.path.join(self._settings.getBaseFolder("data"), "backup")
 			if not os.path.ismount(backup_folder):
 				self._logger.debug("Skipping {} because there is no mount.".format(backup_type))
@@ -270,7 +270,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			data["notifyTitel"] = gettext("SMTP Error")
 			data["notifyText"] = str(error_code) + " - " + error_message
 			data["notifyType"] = "error"
-			data["notifyHide"] = False					
+			data["notifyHide"] = False
 			self._sendDataToClient("smtp_error", data)
 		except ConnectionError as e:
 			error_code = str(e.errno)
@@ -280,7 +280,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			data["notifyTitel"] = gettext("SMTP Error")
 			data["notifyText"] = str(error_code) + " - " + error_message
 			data["notifyType"] = "error"
-			data["notifyHide"] = False					
+			data["notifyHide"] = False
 			self._sendDataToClient("smtp_error", data)
 
 	def get_api_commands(self):
@@ -296,7 +296,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			self._logger.debug("Send an Email to test settings.")
 			self._sendEmailNotification("OctoPrint Backup: Testmessage", "OctoPrint Backup: Testmessage")
 			# return flask.jsonify(results)
-		
+
 
 	# ~~ AssetPlugin mixin
 
@@ -331,8 +331,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				pip="https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/{target_version}.zip"
 			)
 
-		# if octoprint version is less than 1.6.0, lock update check to specific branch
-		if not version.is_octoprint_compatible(">=1.6.0"):
+		# if octoprint version is less than 1.9.0, lock update check to specific branch
+		if not version.is_octoprint_compatible(">=1.9.0"):
 			data['type'] = 'github_commit'
 			data['branch'] = '0.0.6'
 
@@ -344,9 +344,9 @@ __plugin_pythoncompat__ = ">=2.7,<4"
 
 def __plugin_check__():
 	from octoprint.util.version import is_octoprint_compatible
-	compatible = is_octoprint_compatible(">=1.6.0")
+	compatible = is_octoprint_compatible(">=1.9.0")
 	if not compatible:
-		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.6.0+")
+		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.9.0+")
 	return compatible
 
 def __plugin_load__():
@@ -357,5 +357,4 @@ def __plugin_load__():
 	__plugin_hooks__ = {
 		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
   		"octoprint.plugin.backup.after_backup": __plugin_implementation__.after_backup
-  		#"octoprint.plugin.backup.before_backup": __plugin_implementation__.before_backup
 	}
