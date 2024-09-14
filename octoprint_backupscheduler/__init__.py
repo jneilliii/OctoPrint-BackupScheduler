@@ -48,6 +48,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			notification={"enabled": True, "retainedNotifyMessageID": ""}
 		)
 
+	# blacklist SMTP settings for REST API
+	def get_settings_restricted_paths(self):
+		from octoprint.access.permissions import Permissions
+		return {'admin':[["send_email"]]}
+
+
 	# ~~ StartupPlugin mixin
 
 	def on_after_startup(self):
