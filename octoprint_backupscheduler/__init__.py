@@ -338,7 +338,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			)
 
 		# if octoprint version is less than 1.9.0, lock update check to specific branch
-		if not version.is_octoprint_compatible(">=1.9.0"):
+		if not version.is_octoprint_compatible(">=1.6.0"):
 			data['type'] = 'github_commit'
 			data['branch'] = '0.0.6'
 
@@ -350,9 +350,9 @@ __plugin_pythoncompat__ = ">=2.7,<4"
 
 def __plugin_check__():
 	from octoprint.util.version import is_octoprint_compatible
-	compatible = is_octoprint_compatible(">=1.9.0")
+	compatible = is_octoprint_compatible(">=1.6.0")
 	if not compatible:
-		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.9.0+")
+		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.6.0+")
 	return compatible
 
 def __plugin_load__():
