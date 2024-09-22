@@ -32,8 +32,8 @@ $(function () {
 
         // receive data from server
         self.onDataUpdaterPluginMessage = function (plugin, data) {
-            // debugger
-            // if (plugin == "backupscheduler") {
+            // exit early if not from this plugin
+            if (plugin !== "backupscheduler") return;
             // NotificationMessages
             if (data.notifyType) {
                 var notfiyType = data.notifyType;
