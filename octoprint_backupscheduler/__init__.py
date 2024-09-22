@@ -65,7 +65,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		return data
 
 	def on_settings_load(self):
-		data = octoprint.plugin.SettingsPlugin.on_settings_load(self)		
+		data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
 		if os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD"):
 			data["send_email"]["smtp_password"] = os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD")
 		return data
@@ -217,7 +217,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
 	# ~~ BackupPlugin hooks
 
-	#TODO: Trigger abort in OctoPrint backup plugin in general to avoid SD writes - actuall not possible
+	#TODO: Trigger abort in OctoPrint backup plugin in general to avoid SD writes - actually not possible by OctoPrint
 	# def before_backup(self):
 	# 	settings = octoprint.plugin.plugin_settings_for_settings_plugin(
 	# 		"backup", self

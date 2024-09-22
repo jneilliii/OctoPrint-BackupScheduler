@@ -52,7 +52,7 @@ $(function () {
                     case "no_mount":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Last Backup failed because of a missing mount! Please check why the mount was missing or reset retained flag!"),
+                            text: gettext("Last Backup failed because of a missing mount! Please check why the mount was missing. Reset retained flag to confirm notification!"),
                             type: "error",
                             hide: false
                         });
@@ -60,7 +60,7 @@ $(function () {
                     case "backup_failed":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Last Backup failed! Issues caused inside OctoPrint. Please check why the backup could not be created or reset retained flag!"),
+                            text: gettext("Last Backup failed! Issues caused inside OctoPrint. Please check why the backup could not be created. Reset retained flag to confirm notification!"),
                             type: "error",
                             hide: false
                         });
@@ -92,7 +92,6 @@ $(function () {
                 // if(self.crawl_results().length === 0){
                 // 	self.crawl_results.push({name: ko.observable('No convertible files found'), files: ko.observableArray([])});
                 // }
-                // self.filesViewModel.requestData({force: true});
                 self.sendTestEmailRunning(false);
             }).fail(function (data) {
                 self.sendTestEmailRunning(false);
