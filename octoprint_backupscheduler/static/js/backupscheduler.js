@@ -52,7 +52,7 @@ $(function () {
                     case "no_mount":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Last Backup failed because of a missing mount! Please check why the mount was missing. Reset retained flag to confirm notification!"),
+                            text: gettext("Last Backup failed because of a missing mount! Please check why the mount was missing. Reset retained flag to confirm notification."),
                             type: "error",
                             hide: false
                         });
@@ -60,7 +60,7 @@ $(function () {
                     case "backup_failed":
                         new PNotify({
                             title: gettext("Backup failed"),
-                            text: gettext("Last Backup failed! Issues caused inside OctoPrint. Please check why the backup could not be created. Reset retained flag to confirm notification!"),
+                            text: gettext("Last Backup failed! Issues caused inside OctoPrint. Please check why the backup could not be created. Reset retained flag to confirm notification."),
                             type: "error",
                             hide: false
                         });

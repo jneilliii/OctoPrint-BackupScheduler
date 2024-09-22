@@ -70,6 +70,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			data["send_email"]["smtp_password"] = os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD")
 		return data
 
+	def on_plugin_pending_uninstall(self):
+		os.environ.pop("BACKUPSCHEDULER_SMTP_PASSWORD", None)
+
 
  	# ~~ StartupPlugin mixin
 
