@@ -263,8 +263,8 @@
     data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled()">
     <div class="alert alert-info">
         <i class="fas fa-info icon-info-sign iconRight"></i>
-        {{ _('The password is stored unencrypted in OctoPrint configuration. Please be aware of this and use a
-        special account for it. Please save settings before testing!') }}
+        {{ _('The password is stored unencrypted in an environment variable of the user running OctoPrint and not
+        included in the backup. Please be aware of this. Please save settings before testing!') }}
     </div>
     <div class="controls">
         <label class="checkbox">

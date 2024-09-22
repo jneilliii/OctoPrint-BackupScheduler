@@ -32,6 +32,8 @@ $(function () {
 
         // receive data from server
         self.onDataUpdaterPluginMessage = function (plugin, data) {
+            // debugger
+            // if (plugin == "backupscheduler") {
             // NotificationMessages
             if (data.notifyType) {
                 var notfiyType = data.notifyType;
@@ -65,6 +67,7 @@ $(function () {
                         break;
                 }
             }
+            // }
         }
 
         // Send an Email to test settings

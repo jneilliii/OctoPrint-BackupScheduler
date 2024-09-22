@@ -27,6 +27,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		self.backup_pending_type = []
 		self.current_settings = None
 		self.backup_helpers = None
+		self._smtp_password = None
 
 	# ~~ SettingsPlugin mixin
 
@@ -44,7 +45,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
 			startup_backups=[],
 			check_mount=False,
-   			send_email={"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "receiver": ""},
+   			send_email={"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "sender": "", "receiver": ""},
 			notification={"enabled": True, "retainedNotifyMessageID": ""}
 		)
 
@@ -53,8 +54,24 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		from octoprint.access.permissions import Permissions
 		return {'admin':[["send_email"]]}
 
+	def on_settings_save(self, data):
+		if "send_email" in data:
+			if "smtp_password" in data["send_email"]:
+				os.environ["BACKUPSCHEDULER_SMTP_PASSWORD"] = data["send_email"]["smtp_password"]
+				del data["send_email"]["smtp_password"]
+				if len(data["send_email"]) == 0:
+					del data["send_email"]
+		octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+		return data
 
-	# ~~ StartupPlugin mixin
+	def on_settings_load(self):
+		data = octoprint.plugin.SettingsPlugin.on_settings_load(self)		
+		if os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD"):
+			data["send_email"]["smtp_password"] = os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD")
+		return data
+
+
+ 	# ~~ StartupPlugin mixin
 
 	def on_after_startup(self):
 		# can this be moved to plugin_load or init to prevent additional processing?
@@ -66,6 +83,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			t = threading.Timer(1, self._perform_backup, kwargs={"backup_type": "startup_backups"})
 			t.daemon = True
 			t.start()
+		self._smtp_password = os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD")
+
 
 	# ~~ EventHandlerPlugin mixin
 
@@ -262,8 +281,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				server =  smtplib.SMTP()
 			server.connect(self._settings.get(["send_email", "smtp_server"]), self._settings.get_int(["send_email", "smtp_port"]))
 			server.ehlo()
-			if self._settings.get(["send_email", "smtp_user"]) != "":
-				server.login(self._settings.get(["send_email", "smtp_user"]), self._settings.get(["send_email", "smtp_password"]))
+			if self._settings.get(["send_email", "smtp_user"]) != "" and self._smtp_password is not None:
+				server.login(self._settings.get(["send_email", "smtp_user"]), self._smtp_password)
 			try:
 				server.sendmail(msg['From'], msg['To'], msg.as_string())
 			finally:
