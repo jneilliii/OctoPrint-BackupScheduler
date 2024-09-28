@@ -2,8 +2,6 @@
 from __future__ import absolute_import
 
 import logging
-import ssl
-
 import octoprint.plugin
 from . import schedule
 import threading
@@ -11,7 +9,6 @@ from datetime import datetime
 from octoprint.util import RepeatedTimer, version, to_bytes, to_str
 import os
 import smtplib
-from smtplib import *
 from email.mime.text import MIMEText
 from flask_babel import gettext
 from cryptography.fernet import Fernet
