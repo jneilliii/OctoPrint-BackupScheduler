@@ -1,8 +1,4 @@
-<h3>{{ _('Backup Scheduler') }} <small>{{ _('Version') }}: <span
-            data-bind="text: settingsViewModel.settings.plugins.backupscheduler.installed_version"></span></small></h3>
-<div class="well alert-danger"
-    data-bind="visible: parseInt(VERSION.split('.')[0])==1 && parseInt(VERSION.split('.')[1])<6">
-    {{ _('OctoPrint versions older than 1.6.0 will no longer get updates for this plugin.') }}</div>
+<h3>{{ _('Backup Scheduler') }} <small>{{ _('Version') }}: {{ plugin_backupscheduler_plugin_version }}</small></h3>
 <div class="row-fluid">
     <div class="row-fluid"><strong>{{ _('Schedule Backups') }}</strong></div>
     <div class="control-group">
@@ -202,106 +198,85 @@
     </div>
 </div>
 <div class="row-fluid">
-    <div class="well alert-danger"
-        data-bind="visible: parseInt(VERSION.split('.')[0])==1 && parseInt(VERSION.split('.')[1])<9">
-        {{ _('OctoPrint versions older than 1.9.0 does not support the following function.') }}</div>
+    <div class="row-fluid"><strong>{{ _('Notifications and Mount Check') }}</strong></div>
     <div class="control-group">
         <div class="controls">
             <label class="checkbox">
                 <input type="checkbox"
-                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.check_mount, enable: !(parseInt(VERSION.split('.')[0])==1 && parseInt(VERSION.split('.')[1])<9)">
-                {{ _('Fail is backupfolder is not a mount.') }}
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.notification.enabled">
+                {{ _('Display error notifications in OctoPrint GUI.') }}
             </label>
             <div class="alert alert-info">
-                <i class="fas fa-info icon-info-sign iconRight"></i>
-                {{ _('If you mounted the backupfolder to a network share to reduce SD card writes and store your backups
-                at a secure place you can enable this feature. It will check if the share is really mounted before
-                starting a backup.') }}
+                <i class="fas fa-info-circle"></i> {{ _('The last error notification is retained until a backup succeeds or by pressing the "Clear Error" button on the notification.') }}
+            </div>
+        </div>
+    </div>
+    <div class="control-group">
+        <div class="controls">
+            <label class="checkbox">
+                <input type="checkbox"
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.check_mount">
+                {{ _('Error if backup folder is not mounted.') }}
+            </label>
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i> {{ _('If the backup folder is mounted to a network share to reduce SD card writes, you can enable this feature to validate the mount. If the mount does not exist an error will be reported.') }}
             </div>
         </div>
     </div>
 </div>
-<div class="row-fluid"></div>
-<div class="control-group">
-    <div class="controls">
-        <label class="checkbox">
-            <input type="checkbox"
-                data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.notification.enabled, enable: !(parseInt(VERSION.split('.')[0])==1 && parseInt(VERSION.split('.')[1])<9)">
-            {{ _('Create Notifications in OctoPrints GUI.') }}
-        </label>
-    </div>
-</div>
-<div class="control-group span11"
-    data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.notification.enabled()">
-    <div class="controls">
-        <label class="checkbox">
-            <input type="checkbox"
-                data-bind="enable: false, checked: settingsViewModel.settings.plugins.backupscheduler.notification.retainedNotifyMessageID() !== ''">{{
-            _('Retained Notfication') }}
-            <button class="btn" data-bind="click: resetRetainedNotifyMessageID">
-                {{ _('Reset') }}
-            </button>
-        </label>
-        <div class="alert alert-info">
-            <i class="fas fa-info icon-info-sign iconRight"></i>
-            {{ _('If the last backup failed the GUI Notification is retained until a backup succeed. It can be reset
-            here also.') }}
+<div class="row-fluid">
+    <div class="control-group">
+        <div class="controls">
+            <label class="checkbox">
+                <input type="checkbox"
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled">
+                {{ _('Send an Email via SMTP if backup fails.') }}
+            </label>
         </div>
     </div>
-</div>
-<div class="row-fluid"></div>
-<div class="control-group">
-    <div class="controls">
-        <label class="checkbox">
-            <input type="checkbox"
-                data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled, enable: !(parseInt(VERSION.split('.')[0])==1 && parseInt(VERSION.split('.')[1])<9)">
-            {{ _('Send an Email via SMTP if backup fails.') }}
-        </label>
-    </div>
-</div>
-<div class="control-group span11"
-    data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled()">
-    <div class="alert alert-info">
-        <i class="fas fa-info icon-info-sign iconRight"></i>
-        {{ _('The password is stored unencrypted in an environment variable of the user running OctoPrint and not
-        included in the backup. Please be aware of this. Please save settings before testing!') }}
-    </div>
-    <div class="controls">
-        <label class="checkbox">
-            <input type="checkbox"
-                data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.send_successful">{{
-            _('Send also on successful Backup') }}
-        </label>
-    </div>
-    <div class="row-fluid"></div>
-    <div class="controls">
-        <label class="control-label">{{ _('SMTP Server') }}</label>
-        <input type="text" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_server">
-        <label class="control-label">{{ _('SMTP Port') }}</label>
-        <input type="number" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_port">
-        <label class="checkbox">
-            <input type="checkbox"
-                data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_tls">{{ _('TLS')
-            }}
-        </label>
-        <label class="control-label">{{ _('User') }}</label>
-        <input type="text" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_user">
-        <label class="control-label">{{ _('Password') }}</label>
-        <input type="password" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_password">
-        <label class="control-label">{{ _('Sender Adress') }}</label>
-        <input type="text" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.sender">
-        <label class="control-label">{{ _('Receiver Adress') }}</label>
-        <input type="text" class="input-block-level"
-            data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.receiver">
-    </div>
-    <div class="control">
-        <button class="btn" data-bind="click: sendTestEmail, enable: !sendTestEmailRunning()"><i
-                class="fa fa-spinner fa-spin" data-bind="visible: sendTestEmailRunning" style="display: none;"></i> {{
-            _('Send an Email') }}</button>
+    <div class="control-group span11"
+        data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled()">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            {{ _('Please save settings before testing! The password is stored encrypted and not included in backups.
+            As a result, on restoring a backup you will need to reenter these settings.') }}
+        </div>
+        <div class="controls">
+            <label class="checkbox">
+                <input type="checkbox"
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.send_successful">{{
+                _('Send also on successful Backup') }}
+            </label>
+        </div>
+        <div class="controls">
+            <label class="control-label">{{ _('SMTP Server') }}</label>
+            <input type="text" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_server">
+            <label class="control-label">{{ _('SMTP Port') }}</label>
+            <input type="number" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_port">
+            <label class="checkbox">
+                <input type="checkbox"
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_tls">{{ _('TLS')
+                }}
+            </label>
+            <label class="control-label">{{ _('Username') }}</label>
+            <input type="text" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_user">
+            <label class="control-label">{{ _('Password') }}</label>
+            <input type="password" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_password">
+            <label class="control-label">{{ _('Sender Address') }}</label>
+            <input type="text" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.sender">
+            <label class="control-label">{{ _('Recipient Address') }}</label>
+            <input type="text" class="input-block-level"
+                data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.recipient">
+        </div>
+        <div class="control">
+            <button class="btn" data-bind="click: sendTestEmail, enable: !sendTestEmailRunning()"><i
+                    class="fa fa-spinner fa-spin" data-bind="visible: sendTestEmailRunning" style="display: none;"></i> {{
+                _('Send Test Email') }}</button>
+        </div>
     </div>
 </div>
