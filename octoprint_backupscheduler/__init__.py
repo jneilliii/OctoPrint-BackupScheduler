@@ -56,7 +56,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         if "send_email" in data:
             if "smtp_password" in data["send_email"]:
                 f = Fernet(base64.urlsafe_b64encode(to_bytes(self._settings.global_get(["server", "secretKey"]))))
-                data_filename = os.path.join(self.get_plugin_data_folder(), "data.txt")
+                data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
                 with open(data_filename, "wb") as data_file:
                     data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
                 del data["send_email"]["smtp_password"]
@@ -67,15 +67,13 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
     def on_settings_load(self):
         data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
-        data_filename = os.path.join(self.get_plugin_data_folder(), "data.txt")
+        data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
         if os.path.exists(data_filename):
             f = Fernet(base64.urlsafe_b64encode(to_bytes(self._settings.global_get(["server", "secretKey"]))))
             with open(data_filename, "rb") as data_file:
-                data["send_email"]["smtp_password"] = to_str(f.decrypt(data_file.read()))
+                data["send_email"]["smtp_password"] = to_str(f.decrypt(data_file.read())).decode()
         return data
 
-    def on_plugin_pending_uninstall(self):
-        os.environ.pop("BACKUPSCHEDULER_SMTP_PASSWORD", None)
 
     # ~~ StartupPlugin mixin
 
@@ -279,7 +277,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         msg = MIMEText(body, "html")
         msg['Subject'] = subject
         msg['From'] = self._settings.get(["send_email", "sender"])
-        msg['To'] = self._settings.get(["send_email", "receiver"])
+        msg['To'] = self._settings.get(["send_email", "recipient"])
         # Send the message via an SMTP server
         try:
             if self._settings.get_boolean(["send_email", "smtp_tls"]):
@@ -290,9 +288,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
             server._host = self._settings.get(["send_email", "smtp_server"])
             server.connect(self._settings.get(["send_email", "smtp_server"]), self._settings.get_int(["send_email", "smtp_port"]))
             server.ehlo()
-            if self._settings.get(["send_email", "smtp_user"]) != "" and os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD", False):
-                f = Fernet(base64.urlsafe_b64encode(to_bytes(self._settings.global_get(["server", "secretKey"]))))
-                server.login(self._settings.get(["send_email", "smtp_user"]), to_str(f.decrypt(os.environ.get("BACKUPSCHEDULER_SMTP_PASSWORD"))))
+            if self._settings.get(["send_email", "smtp_user"]) != "" and self._settings.get(["send_email", "smtp_password"]) != "":
+                server.login(self._settings.get(["send_email", "smtp_user"]), self._settings.get(["send_email", "smtp_password"]))
             try:
                 server.sendmail(msg['From'], msg['To'], msg.as_string())
             finally:

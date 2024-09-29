@@ -207,7 +207,8 @@
                 {{ _('Display error notifications in OctoPrint GUI.') }}
             </label>
             <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i> {{ _('The last error notification is retained until a backup succeeds or by pressing the "Clear Error" button on the notification.') }}
+                <i class="fas fa-info-circle"></i> {{ _('The last error notification is retained until a backup succeeds
+                or by pressing the "Clear Error" button on the notification.') }}
             </div>
         </div>
     </div>
@@ -219,7 +220,9 @@
                 {{ _('Error if backup folder is not mounted.') }}
             </label>
             <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i> {{ _('If the backup folder is mounted to a network share to reduce SD card writes, you can enable this feature to validate the mount. If the mount does not exist an error will be reported.') }}
+                <i class="fas fa-info-circle"></i> {{ _('If the backup folder is mounted to a network share to reduce SD
+                card writes, you can enable this feature to validate the mount. If the mount does not exist an error
+                will be reported.') }}
             </div>
         </div>
     </div>
@@ -257,7 +260,8 @@
                 data-bind="value: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_port">
             <label class="checkbox">
                 <input type="checkbox"
-                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_tls">{{ _('TLS')
+                    data-bind="checked: settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_tls">{{
+                _('TLS')
                 }}
             </label>
             <label class="control-label">{{ _('Username') }}</label>
@@ -275,7 +279,8 @@
         </div>
         <div class="control">
             <button class="btn" data-bind="click: sendTestEmail, enable: !sendTestEmailRunning()"><i
-                    class="fa fa-spinner fa-spin" data-bind="visible: sendTestEmailRunning" style="display: none;"></i> {{
+                    class="fa fa-spinner fa-spin" data-bind="visible: sendTestEmailRunning" style="display: none;"></i>
+                {{
                 _('Send Test Email') }}</button>
         </div>
     </div>
