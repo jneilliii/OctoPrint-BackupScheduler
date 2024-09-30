@@ -292,7 +292,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
             server._host = self._settings.get(["send_email", "smtp_server"])
             server.connect(self._settings.get(["send_email", "smtp_server"]), self._settings.get_int(["send_email", "smtp_port"]))
             server.ehlo()
-            if self._settings.get(["send_email", "smtp_user"]) != "" and self._get_encrypted_password():
+            if self._settings.get(["send_email", "smtp_user"]) != "":
                 server.login(self._settings.get(["send_email", "smtp_user"]), self._get_encrypted_password())
             try:
                 server.sendmail(msg['From'], msg['To'], msg.as_string())
