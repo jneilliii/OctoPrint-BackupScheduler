@@ -2,6 +2,8 @@
 from __future__ import absolute_import
 
 import logging
+from time import sleep
+
 import octoprint.plugin
 from . import schedule
 import threading
@@ -27,6 +29,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         self.backup_pending_type = []
         self.current_settings = None
         self.backup_helpers = None
+        self.creating_backup = False
 
     # ~~ SettingsPlugin mixin
 
@@ -95,8 +98,10 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
     # ~~ EventHandlerPlugin mixin
 
     def on_event(self, event, payload):
-        if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone"):
+        if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone", "plugin_backup_backup_created"):
             return
+        if event == "plugin_backup_backup_created":
+            self.creating_backup = False
         if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(
                 ["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
             if event == "Startup":
@@ -212,13 +217,16 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         instance_name = self._settings.global_get(["appearance", "name"]) or "octoprint"
         backup_filename = "{}-{}-{:%Y%m%d-%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""), datetime.now())
         self._logger.debug("Performing {} with exclusions: {} as {}.".format(backup_type, exclusions, backup_filename))
+        self.creating_backup = True
         self.backup_helpers["create_backup"](exclude=exclusions, filename=backup_filename)
+        while self.creating_backup:
+            sleep(1)
         completed_backups = self._settings.get([backup_type])
         completed_backups.append(backup_filename)
         # do retention check here and delete older backups
         delete_backups = completed_backups[:-retention]
-        self._logger.debug("Deleting backups: {}".format(delete_backups))
         for backup in delete_backups:
+            self._logger.debug(f"Deleting backup: {backup}")
             self.backup_helpers["delete_backup"](backup)
         retained_backups = completed_backups[-retention:]
         self._settings.set([backup_type], retained_backups)
