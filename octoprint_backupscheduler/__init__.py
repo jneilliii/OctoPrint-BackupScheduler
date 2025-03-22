@@ -58,20 +58,27 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
     def on_settings_save(self, data):
         if "send_email" in data:
             if "smtp_password" in data["send_email"]:
-                f = Fernet(base64.urlsafe_b64encode(to_bytes(self._settings.global_get(["server", "secretKey"]))))
-                data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
-                with open(data_filename, "wb") as data_file:
-                    data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
-                del data["send_email"]["smtp_password"]
-                if len(data["send_email"]) == 0:
-                    del data["send_email"]
+                secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
+                b64_secret_key = base64.urlsafe_b64encode(secret_key)
+                final_key = self._trim_and_pad(b64_secret_key, 32)
+                f = Fernet(final_key)
+            data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
+            with open(data_filename, "wb") as data_file:
+                data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
+            del data["send_email"]["smtp_password"]
+            if len(data["send_email"]) == 0:
+                del data["send_email"]
+
         octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
         return data
 
     def _get_encrypted_password(self):
         data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
         if os.path.exists(data_filename):
-            f = Fernet(base64.urlsafe_b64encode(to_bytes(self._settings.global_get(["server", "secretKey"]))))
+            secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
+            b64_secret_key = base64.urlsafe_b64encode(secret_key)
+            final_key = self._trim_and_pad(b64_secret_key, 32)
+            f = Fernet(final_key)
             with open(data_filename, "rb") as data_file:
                 return to_str(f.decrypt(data_file.read())).decode()
         return None
@@ -312,6 +319,20 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
             data = {"notifyTitle": gettext("SMTP Error"), "notifyMessage": error_message, "notifyType": "error",
                     "notifyHide": False}
             self._sendNotificationToClient(data, True)
+
+    # ~~ Utility Functions
+
+    def _trim_and_pad(self, data, target_len, padding_byte=b'\x00'):
+        data_len = len(data)
+
+        if data_len > target_len:
+            return data[:target_len]  # Trim if longer
+        elif data_len < target_len:
+            return data + padding_byte * (target_len - data_len)  # Pad if shorter
+        else:
+            return data  # Return original if already correct length
+
+    # ~~ ApiPlugin mixin
 
     def get_api_commands(self):
         return {'sendTestEmail': [], 'clearRetainedMessage': []}
