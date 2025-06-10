@@ -87,7 +87,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
     def on_settings_load(self):
         data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
-        data["send_email"]["smtp_password"] = self._get_encrypted_password()
+        if data["send_email"]["enabled"]:
+            data["send_email"]["smtp_password"] = self._get_encrypted_password()
         return data
 
 
