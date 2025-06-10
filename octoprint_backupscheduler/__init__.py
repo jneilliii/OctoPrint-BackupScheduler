@@ -56,6 +56,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         return {'admin':[["send_email"]]}
 
     def on_settings_save(self, data):
+        self._logger.debug(data)
         if "send_email" in data:
             if "smtp_password" in data["send_email"]:
                 secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
