@@ -33,6 +33,17 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
     # ~~ SettingsPlugin mixin
 
+    def get_settings_version(self):
+        return 2
+
+    def on_settings_migrate(self, target, current):
+        if current is None or current < 2:
+            default_settings = self.get_settings_defaults()
+            self._settings.set(["send_email"], default_settings["send_email"])
+            data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
+            if os.path.exists(data_filename):
+                os.remove(data_filename)
+
     def get_settings_defaults(self):
         return dict(
             installed_version=self._plugin_version,
@@ -335,6 +346,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
             return data  # Return original if already correct length
 
     # ~~ ApiPlugin mixin
+
+    def is_api_protected(self) -> bool:
+        return True
 
     def get_api_commands(self):
         return {'sendTestEmail': [], 'clearRetainedMessage': []}
