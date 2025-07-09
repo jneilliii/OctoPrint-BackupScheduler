@@ -33,6 +33,17 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 
     # ~~ SettingsPlugin mixin
 
+    def get_settings_version(self):
+        return 2
+
+    def on_settings_migrate(self, target, current):
+        if current is None or current < 2:
+            default_settings = self.get_settings_defaults()
+            self._settings.set(["send_email"], default_settings["send_email"])
+            data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
+            if os.path.exists(data_filename):
+                os.remove(data_filename)
+
     def get_settings_defaults(self):
         return dict(
             installed_version=self._plugin_version,
@@ -58,12 +69,11 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
     def on_settings_save(self, data):
         self._logger.debug(data)
         if "send_email" in data:
-            if data["send_email"]["enabled"]:
-                if "smtp_password" in data["send_email"]:
-                    secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
-                    b64_secret_key = base64.urlsafe_b64encode(secret_key)
-                    final_key = self._trim_and_pad(b64_secret_key, 32)
-                    f = Fernet(final_key)
+            if "smtp_password" in data["send_email"]:
+                secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
+                b64_secret_key = base64.urlsafe_b64encode(secret_key)
+                # final_key = self._trim_and_pad(b64_secret_key, 32)
+                f = Fernet(b64_secret_key)
                 data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
                 with open(data_filename, "wb") as data_file:
                     data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
@@ -79,8 +89,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         if os.path.exists(data_filename):
             secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
             b64_secret_key = base64.urlsafe_b64encode(secret_key)
-            final_key = self._trim_and_pad(b64_secret_key, 32)
-            f = Fernet(final_key)
+            # final_key = self._trim_and_pad(b64_secret_key, 32)
+            f = Fernet(b64_secret_key)
             with open(data_filename, "rb") as data_file:
                 return to_str(f.decrypt(data_file.read())).decode()
         return None
@@ -336,6 +346,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
             return data  # Return original if already correct length
 
     # ~~ ApiPlugin mixin
+
+    def is_api_protected(self) -> bool:
+        return True
 
     def get_api_commands(self):
         return {'sendTestEmail': [], 'clearRetainedMessage': []}
