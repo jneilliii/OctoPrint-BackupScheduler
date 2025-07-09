@@ -62,8 +62,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
                 if "smtp_password" in data["send_email"]:
                     secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
                     b64_secret_key = base64.urlsafe_b64encode(secret_key)
-                    final_key = self._trim_and_pad(b64_secret_key, 32)
-                    f = Fernet(final_key)
+                    # final_key = self._trim_and_pad(b64_secret_key, 32)
+                    f = Fernet(b64_secret_key)
                 data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
                 with open(data_filename, "wb") as data_file:
                     data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
@@ -79,8 +79,8 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
         if os.path.exists(data_filename):
             secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
             b64_secret_key = base64.urlsafe_b64encode(secret_key)
-            final_key = self._trim_and_pad(b64_secret_key, 32)
-            f = Fernet(final_key)
+            # final_key = self._trim_and_pad(b64_secret_key, 32)
+            f = Fernet(b64_secret_key)
             with open(data_filename, "rb") as data_file:
                 return to_str(f.decrypt(data_file.read())).decode()
         return None
