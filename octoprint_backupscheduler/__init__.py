@@ -58,12 +58,11 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
     def on_settings_save(self, data):
         self._logger.debug(data)
         if "send_email" in data:
-            if data["send_email"]["enabled"]:
-                if "smtp_password" in data["send_email"]:
-                    secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
-                    b64_secret_key = base64.urlsafe_b64encode(secret_key)
-                    # final_key = self._trim_and_pad(b64_secret_key, 32)
-                    f = Fernet(b64_secret_key)
+            if "smtp_password" in data["send_email"]:
+                secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
+                b64_secret_key = base64.urlsafe_b64encode(secret_key)
+                # final_key = self._trim_and_pad(b64_secret_key, 32)
+                f = Fernet(b64_secret_key)
                 data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
                 with open(data_filename, "wb") as data_file:
                     data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
