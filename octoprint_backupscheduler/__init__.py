@@ -5,428 +5,436 @@ import logging
 from time import sleep
 
 import octoprint.plugin
+from octoprint.settings import valid_boolean_trues
+
 from . import schedule
 import threading
 from datetime import datetime
-from octoprint.util import RepeatedTimer, version, to_bytes, to_str
+from octoprint.util import RepeatedTimer, to_str, to_bytes
+from octoprint.access.permissions import Permissions
 import os
 import smtplib
 from email.mime.text import MIMEText
 from flask_babel import gettext
 from cryptography.fernet import Fernet
-import base64
+
 
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
-                            octoprint.plugin.AssetPlugin,
-                            octoprint.plugin.TemplatePlugin,
-                            octoprint.plugin.EventHandlerPlugin,
-                            octoprint.plugin.SimpleApiPlugin,
-                            octoprint.plugin.StartupPlugin):
+							octoprint.plugin.AssetPlugin,
+							octoprint.plugin.TemplatePlugin,
+							octoprint.plugin.EventHandlerPlugin,
+							octoprint.plugin.SimpleApiPlugin,
+							octoprint.plugin.StartupPlugin):
 
-    def __init__(self):
-        self._repeatedtimer = None
-        self.backup_pending = False
-        self.backup_pending_type = []
-        self.current_settings = None
-        self.backup_helpers = None
-        self.creating_backup = False
+	def __init__(self):
+		self._repeatedtimer = None
+		self.backup_pending = False
+		self.backup_pending_type = []
+		self.current_settings = None
+		self.backup_helpers = None
+		self.creating_backup = False
 
-    # ~~ SettingsPlugin mixin
+	# ~~ SettingsPlugin mixin
 
-    def get_settings_version(self):
-        return 2
+	def get_settings_version(self):
+		return 3
 
-    def on_settings_migrate(self, target, current):
-        if current is None or current < 2:
-            default_settings = self.get_settings_defaults()
-            self._settings.set(["send_email"], default_settings["send_email"])
-            data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
-            if os.path.exists(data_filename):
-                os.remove(data_filename)
+	def on_settings_migrate(self, target, current):
+		if current is None or current < 3:
+			self._logger.info("Resetting email specific settings to default.")
+			default_settings = self.get_settings_defaults()
+			if current is None or current < 2:
+				self._settings.set(["send_email"], default_settings["send_email"])
+			self._settings.set(["key"], Fernet.generate_key())
+			self._settings.set(["send_email", "smtp_password"], "")
+			data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
+			if os.path.exists(data_filename):
+				os.remove(data_filename)
 
-    def get_settings_defaults(self):
-        return dict(
-            installed_version=self._plugin_version,
-            daily={"enabled": False, "time": "00:00", "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
-            daily_backups=[],
-            weekly={"enabled": False, "time": "00:00", "day": 7, "retention": 1, "exclude_uploads": False,
-                    "exclude_timelapse": False},
-            weekly_backups=[],
-            monthly={"enabled": False, "time": "00:00", "day": 1, "retention": 1, "exclude_uploads": False,
-                     "exclude_timelapse": False},
-            monthly_backups=[],
-            startup={"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
-            startup_backups=[],
-            check_mount=False,
-            send_email={"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25, "smtp_tls": False, "smtp_user": "", "sender": "", "recipient": ""},
-            notification={"enabled": True, "retained_message": {}}
-        )
+	def get_settings_defaults(self):
+		return {'installed_version': self._plugin_version,
+				'daily': {"enabled": False, "time": "00:00", "retention": 1, "exclude_uploads": False,
+						  "exclude_timelapse": False}, 'daily_backups': [],
+				'weekly': {"enabled": False, "time": "00:00", "day": 7, "retention": 1, "exclude_uploads": False,
+						   "exclude_timelapse": False}, 'weekly_backups': [],
+				'monthly': {"enabled": False, "time": "00:00", "day": 1, "retention": 1, "exclude_uploads": False,
+							"exclude_timelapse": False}, 'monthly_backups': [],
+				'startup': {"enabled": False, "retention": 1, "exclude_uploads": False, "exclude_timelapse": False},
+				'startup_backups': [], 'check_mount': False,
+				'send_email': {"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25,
+							   "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "recipient": ""},
+				'notification': {"enabled": True, "retained_message": {"notifyTitle": "", "notifyMessage": "",
+																	   "notifyType": "", "notifyHide": True}}, 'key': ""}
 
-    # blacklist SMTP settings for REST API
-    def get_settings_restricted_paths(self):
-        return {'admin':[["send_email"]]}
+	# blacklist SMTP settings for REST API
+	def get_settings_restricted_paths(self):
+		return {'admin': [["send_email"]]}
 
-    def on_settings_save(self, data):
-        self._logger.debug(data)
-        if "send_email" in data:
-            if "smtp_password" in data["send_email"]:
-                secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
-                b64_secret_key = base64.urlsafe_b64encode(secret_key)
-                # final_key = self._trim_and_pad(b64_secret_key, 32)
-                f = Fernet(b64_secret_key)
-                data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
-                with open(data_filename, "wb") as data_file:
-                    data_file.write(f.encrypt(to_bytes(data["send_email"]["smtp_password"])))
-                del data["send_email"]["smtp_password"]
-            if len(data["send_email"]) == 0:
-                del data["send_email"]
+	def _decrypt(self, data):
+		if self._settings.get(["key"]) != "":
+			f = Fernet(self._settings.get(["key"]))
+			return to_str(f.decrypt(data)).decode()
+		return data
 
-        octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
-        return data
+	def _encrypt(self, data):
+		if self._settings.get(["key"]) != "":
+			f = Fernet(self._settings.get(["key"]))
+			return f.encrypt(to_bytes(data))
+		return data
 
-    def _get_encrypted_password(self):
-        data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
-        if os.path.exists(data_filename):
-            secret_key = to_bytes(self._settings.global_get(["server", "secretKey"]))
-            b64_secret_key = base64.urlsafe_b64encode(secret_key)
-            # final_key = self._trim_and_pad(b64_secret_key, 32)
-            f = Fernet(b64_secret_key)
-            with open(data_filename, "rb") as data_file:
-                return to_str(f.decrypt(data_file.read())).decode()
-        return None
+	def get_settings_preprocessors(self):
+		return {"send_email": {"smtp_password": self._decrypt}}, {"send_email": {"smtp_password": self._encrypt}}
 
-    def on_settings_load(self):
-        data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
-        if data["send_email"]["enabled"]:
-            data["send_email"]["smtp_password"] = self._get_encrypted_password()
-        return data
+	def on_settings_save(self, data):
+		self._logger.debug(data)
+		if data.get("send_email", {}).get("smtp_password", False):
+			data["send_email"]["smtp_password"] = self._encrypt(to_bytes(data["send_email"]["smtp_password"]))
+			if len(data["send_email"]) == 0:
+				del data["send_email"]
 
+		octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
+		return data
 
-    # ~~ StartupPlugin mixin
+	def on_settings_load(self):
+		data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
+		if data.get("send_email", {}).get("smtp_password", "") != "":
+			data["send_email"]["smtp_password"] = self._decrypt(data["send_email"]["smtp_password"])
+		return data
 
-    def on_after_startup(self):
-        # can this be moved to plugin_load or init to prevent additional processing?
-        self.backup_helpers = self._plugin_manager.get_helpers("backup", "create_backup", "delete_backup")
-        if "create_backup" not in self.backup_helpers or "delete_backup" not in self.backup_helpers:
-            self._logger.info("Missing backup helpers, aborting.")
-            return
-        if self._settings.get_boolean(["startup", "enabled"]):
-            t = threading.Timer(1, self._perform_backup, kwargs={"backup_type": "startup_backups"})
-            t.daemon = True
-            t.start()
+	# ~ StartupPlugin mixin
 
-    # ~~ EventHandlerPlugin mixin
+	def on_after_startup(self):
+		# can this be moved to plugin_load or init to prevent additional processing?
+		self.backup_helpers = self._plugin_manager.get_helpers("backup", "create_backup", "delete_backup")
+		if "create_backup" not in self.backup_helpers or "delete_backup" not in self.backup_helpers:
+			self._logger.info("Missing backup helpers, aborting.")
+			return
+		if self._settings.get_boolean(["startup", "enabled"]):
+			t = threading.Timer(1, self._perform_backup, kwargs={"backup_type": "startup_backups"})
+			t.daemon = True
+			t.start()
 
-    def on_event(self, event, payload):
-        if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone", "plugin_backup_backup_created"):
-            return
-        if event == "plugin_backup_backup_created":
-            self.creating_backup = False
-        if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(
-                ["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
-            if event == "Startup":
-                self.current_settings = {"daily": self._settings.get(["daily"]),
-                                         "weekly": self._settings.get(["weekly"]),
-                                         "monthly": self._settings.get(["monthly"])}
-                backups_enabled = False
-                self._logger.debug("Clearing scheduled jobs.")
-                schedule.clear("backupscheduler")
-                if self._settings.get_boolean(["daily", "enabled"]) and self._settings.get(["daily", "time"]) != "":
-                    backups_enabled = True
-                    self._logger.debug("Scheduling daily backup for %s." % self._settings.get(["daily", "time"]))
-                    schedule.every().day.at(self._settings.get(["daily", "time"])).do(self._perform_backup,
-                                                                                      backup_type="daily_backups").tag(
-                        "backupscheduler")
-                if self._settings.get_boolean(["weekly", "enabled"]) and self._settings.get(["weekly", "time"]) != "":
-                    backups_enabled = True
-                    self._logger.debug("Scheduling weekly backup for %s." % self._settings.get(["weekly", "time"]))
-                    schedule.every().day.at(self._settings.get(["weekly", "time"])).do(self._perform_backup,
-                                                                                       backup_type="weekly_backups").tag(
-                        "backupscheduler")
-                if self._settings.get_boolean(["monthly", "enabled"]) and self._settings.get(["monthly", "time"]) != "":
-                    backups_enabled = True
-                    self._logger.debug("Scheduling monthly backup for %s." % self._settings.get(["monthly", "time"]))
-                    schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup,
-                                                                                        backup_type="monthly_backups").tag(
-                        "backupscheduler")
-                if not self._repeatedtimer and backups_enabled is True:
-                    self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
-                    self._repeatedtimer.start()
-            if event == "SettingsUpdated":
-                if self.current_settings != {"daily": self._settings.get(["daily"]),
-                                             "weekly": self._settings.get(["weekly"]),
-                                             "monthly": self._settings.get(["monthly"])}:
-                    self._logger.debug("Settings updated.")
-                    self.on_event("Startup", {})
-            if event in ("PrintFailed", "PrintDone") and self.backup_pending is True:
-                for backup in self.backup_pending_type:
-                    self._logger.debug(f"Starting {backup} after print completion.")
-                    self._perform_backup(backup_type=backup)
+	# ~~ EventHandlerPlugin mixin
 
-    def _perform_backup(self, backup_type=None):
-        if self._printer.is_printing():
-            self._logger.debug(f"Skipping {backup_type} for now because a print is ongoing.")
-            self.backup_pending = True
-            if backup_type != "all" and backup_type not in self.backup_pending_type:
-                self.backup_pending_type.append(backup_type)
-            return
-        if self._settings.get_boolean(["check_mount"]):
-            backup_folder = os.path.join(self._settings.getBaseFolder("data"), "backup")
-            if not os.path.ismount(backup_folder):
-                self._logger.debug(f"Skipping {backup_type} because there is no mount.")
-                data = {
-                    "notifyTitle": gettext("Backup Failed"),
-                    "notifyMessage": gettext("Last Backup failed because of a missing mount! Please check why the mount was missing. Reset retained flag to confirm notification."),
-                    "notfiyType": "error",
-                    "notifyHide": False
-                }
-                self._sendNotificationToClient(data, True)
-                if self._settings.get_boolean(["send_email", "enabled"]):
-                    body = self._loadFileWithPlaceholders("no_mount.html", {"backup_folder": backup_folder})
-                    self._sendEmailNotification("OctoPrint Backup failed: Mount was missing!", body)
-                return
-        exclusions = []
-        retention = 0
-        if backup_type == "monthly_backups":
-            if datetime.now().day == self._settings.get_int(["monthly", "day"]) and self._settings.get_boolean(
-                    ["monthly", "enabled"]):
-                if self._settings.get_boolean(["monthly", "exclude_uploads"]):
-                    exclusions.append("uploads")
-                if self._settings.get_boolean(["monthly", "exclude_timelapse"]):
-                    exclusions.append("timelapse")
-                retention = self._settings.get_int(["monthly", "retention"])
-                if "monthly_backups" in self.backup_pending_type:
-                    self.backup_pending_type.remove("monthly_backups")
-            else:
-                return
-        if backup_type == "weekly_backups":
-            if datetime.now().isoweekday() == self._settings.get_int(["weekly", "day"]) and self._settings.get_boolean(
-                    ["weekly", "enabled"]):
-                if self._settings.get_boolean(["weekly", "exclude_uploads"]):
-                    exclusions.append("uploads")
-                if self._settings.get_boolean(["weekly", "exclude_timelapse"]):
-                    exclusions.append("timelapse")
-                retention = self._settings.get_int(["weekly", "retention"])
-                if "weekly_backups" in self.backup_pending_type:
-                    self.backup_pending_type.remove("weekly_backups")
-            else:
-                return
-        if backup_type == "daily_backups":
-            if self._settings.get_boolean(["daily", "enabled"]):
-                if self._settings.get_boolean(["daily", "exclude_uploads"]):
-                    exclusions.append("uploads")
-                if self._settings.get_boolean(["daily", "exclude_timelapse"]):
-                    exclusions.append("timelapse")
-                retention = self._settings.get_int(["daily", "retention"])
-                if "daily_backups" in self.backup_pending_type:
-                    self.backup_pending_type.remove("daily_backups")
-            else:
-                return
-        if backup_type == "startup_backups":
-            if self._settings.get_boolean(["startup", "enabled"]):
-                if self._settings.get_boolean(["startup", "exclude_uploads"]):
-                    exclusions.append("uploads")
-                if self._settings.get_boolean(["startup", "exclude_timelapse"]):
-                    exclusions.append("timelapse")
-                retention = self._settings.get_int(["startup", "retention"])
-                if "startup_backups" in self.backup_pending_type:
-                    self.backup_pending_type.remove("startup_backups")
-            else:
-                return
+	def on_event(self, event, payload):
+		if event not in ("Startup", "SettingsUpdated", "PrintFailed", "PrintDone", "plugin_backup_backup_created"):
+			return
+		if event == "plugin_backup_backup_created":
+			self.creating_backup = False
+		if self._settings.get_boolean(["daily", "enabled"]) or self._settings.get_boolean(
+			["weekly", "enabled"]) or self._settings.get_boolean(["monthly", "enabled"]):
+			if event == "Startup":
+				self.current_settings = {"daily": self._settings.get(["daily"]),
+										 "weekly": self._settings.get(["weekly"]),
+										 "monthly": self._settings.get(["monthly"])}
+				backups_enabled = False
+				self._logger.debug("Clearing scheduled jobs.")
+				schedule.clear("backupscheduler")
+				if self._settings.get_boolean(["daily", "enabled"]) and self._settings.get(["daily", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling daily backup for %s." % self._settings.get(["daily", "time"]))
+					schedule.every().day.at(self._settings.get(["daily", "time"])).do(self._perform_backup,
+																					  backup_type="daily_backups").tag(
+						"backupscheduler")
+				if self._settings.get_boolean(["weekly", "enabled"]) and self._settings.get(["weekly", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling weekly backup for %s." % self._settings.get(["weekly", "time"]))
+					schedule.every().day.at(self._settings.get(["weekly", "time"])).do(self._perform_backup,
+																					   backup_type="weekly_backups").tag(
+						"backupscheduler")
+				if self._settings.get_boolean(["monthly", "enabled"]) and self._settings.get(["monthly", "time"]) != "":
+					backups_enabled = True
+					self._logger.debug("Scheduling monthly backup for %s." % self._settings.get(["monthly", "time"]))
+					schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup,
+																						backup_type="monthly_backups").tag(
+						"backupscheduler")
+				if not self._repeatedtimer and backups_enabled is True:
+					self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
+					self._repeatedtimer.start()
+			if event == "SettingsUpdated":
+				if self.current_settings != {"daily": self._settings.get(["daily"]),
+											 "weekly": self._settings.get(["weekly"]),
+											 "monthly": self._settings.get(["monthly"])}:
+					self._logger.debug("Settings updated.")
+					self.on_event("Startup", {})
+			if event in ("PrintFailed", "PrintDone") and self.backup_pending is True:
+				for backup in self.backup_pending_type:
+					self._logger.debug(f"Starting {backup} after print completion.")
+					self._perform_backup(backup_type=backup)
 
-        instance_name = self._settings.global_get(["appearance", "name"]) or "octoprint"
-        backup_filename = "{}-{}-{:%Y%m%d-%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""), datetime.now())
-        self._logger.debug("Performing {} with exclusions: {} as {}.".format(backup_type, exclusions, backup_filename))
-        self.creating_backup = True
-        self.backup_helpers["create_backup"](exclude=exclusions, filename=backup_filename)
-        while self.creating_backup:
-            sleep(1)
-        completed_backups = self._settings.get([backup_type])
-        completed_backups.append(backup_filename)
-        # do retention check here and delete older backups
-        delete_backups = completed_backups[:-retention]
-        for backup in delete_backups:
-            self._logger.debug(f"Deleting backup: {backup}")
-            self.backup_helpers["delete_backup"](backup)
-        retained_backups = completed_backups[-retention:]
-        self._settings.set([backup_type], retained_backups)
-        self._settings.save(trigger_event=False)
-        self._logger.debug(self._settings.get([backup_type]))
-        self.backup_pending = False
+	def _perform_backup(self, backup_type=None):
+		if self._printer.is_printing():
+			self._logger.debug(f"Skipping {backup_type} for now because a print is ongoing.")
+			self.backup_pending = True
+			if backup_type != "all" and backup_type not in self.backup_pending_type:
+				self.backup_pending_type.append(backup_type)
+			return
+		if self._settings.get_boolean(["check_mount"]):
+			backup_folder = os.path.join(self._settings.getBaseFolder("data"), "backup")
+			if not os.path.ismount(backup_folder):
+				self._logger.debug(f"Skipping {backup_type} because there is no mount.")
+				data = {
+					"notifyTitle": gettext("Backup Failed"),
+					"notifyMessage": gettext(
+						"Last Backup failed because of a missing mount! Please check why the mount was missing. Reset retained flag to confirm notification."),
+					"notfiyType": "error",
+					"notifyHide": False
+				}
+				self._sendNotificationToClient(data, True)
+				if self._settings.get_boolean(["send_email", "enabled"]):
+					body = self._loadFileWithPlaceholders("no_mount.html", {"backup_folder": backup_folder})
+					self._sendEmailNotification("OctoPrint Backup failed: Mount was missing!", body)
+				return
+		exclusions = []
+		retention = 0
+		if backup_type == "monthly_backups":
+			if datetime.now().day == self._settings.get_int(["monthly", "day"]) and self._settings.get_boolean(
+				["monthly", "enabled"]):
+				if self._settings.get_boolean(["monthly", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["monthly", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["monthly", "retention"])
+				if "monthly_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("monthly_backups")
+			else:
+				return
+		if backup_type == "weekly_backups":
+			if datetime.now().isoweekday() == self._settings.get_int(["weekly", "day"]) and self._settings.get_boolean(
+				["weekly", "enabled"]):
+				if self._settings.get_boolean(["weekly", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["weekly", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["weekly", "retention"])
+				if "weekly_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("weekly_backups")
+			else:
+				return
+		if backup_type == "daily_backups":
+			if self._settings.get_boolean(["daily", "enabled"]):
+				if self._settings.get_boolean(["daily", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["daily", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["daily", "retention"])
+				if "daily_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("daily_backups")
+			else:
+				return
+		if backup_type == "startup_backups":
+			if self._settings.get_boolean(["startup", "enabled"]):
+				if self._settings.get_boolean(["startup", "exclude_uploads"]):
+					exclusions.append("uploads")
+				if self._settings.get_boolean(["startup", "exclude_timelapse"]):
+					exclusions.append("timelapse")
+				retention = self._settings.get_int(["startup", "retention"])
+				if "startup_backups" in self.backup_pending_type:
+					self.backup_pending_type.remove("startup_backups")
+			else:
+				return
 
-    # ~~ BackupPlugin hooks
+		instance_name = self._settings.global_get(["appearance", "name"]).replace(" ", "-") or "octoprint"
+		backup_filename = "{}-{}-{:%Y%m%d-%H%M%S}.zip".format(instance_name, backup_type.replace("_backups", ""),
+															  datetime.now())
+		self._logger.debug("Performing {} with exclusions: {} as {}.".format(backup_type, exclusions, backup_filename))
+		self.creating_backup = True
+		self.backup_helpers["create_backup"](exclude=exclusions, filename=backup_filename)
+		while self.creating_backup:
+			sleep(1)
+		completed_backups = self._settings.get([backup_type])
+		completed_backups.append(backup_filename)
+		# do retention check here and delete older backups
+		delete_backups = completed_backups[:-retention]
+		for backup in delete_backups:
+			self._logger.debug(f"Deleting backup: {backup}")
+			self.backup_helpers["delete_backup"](backup)
+		retained_backups = completed_backups[-retention:]
+		self._settings.set([backup_type], retained_backups)
+		self._settings.save(trigger_event=False)
+		self._logger.debug(self._settings.get([backup_type]))
+		self.backup_pending = False
 
-    def additional_excludes_hook(self, excludes, *args, **kwargs):
-        # don't include anything from plugin's data folder in backup
-        return ["."]
+	# ~~ BackupPlugin hooks
 
-    def after_backup(self, error):
-        if error:
-            data = {"notifyTitle": gettext("Backup Failed"),
-                "notifyMessage": gettext("Something went wrong with the last backup. Please check octoprint.log for possible causes."),
-                "notfiyType": "error", "notifyHide": False}
-            self._sendNotificationToClient(data, True)
-            if self._settings.get_boolean(["send_email", "enabled"]):
-                body = self._loadFileWithPlaceholders("backup_failed.html")
-                self._sendEmailNotification("OctoPrint Backup Failed", body)
-        else:
-            self._sendNotificationToClient({"notifyTitle": "", "clear_notification": True})
-            self._settings.remove(["notification", "retained_message"])
-            self._settings.save(trigger_event=True)
-            if self._settings.get_boolean(["send_email", "send_successful"]):
-                body = self._loadFileWithPlaceholders("backup_successful.html")
-                self._sendEmailNotification("OctoPrint Backup Successful", body)
+	def after_backup(self, error):
+		if error:
+			data = {"notifyTitle": gettext("Backup Failed"),
+					"notifyMessage": gettext(
+						"Something went wrong with the last backup. Please check octoprint.log for possible causes."),
+					"notfiyType": "error", "notifyHide": False}
+			self._sendNotificationToClient(data, True)
+			if self._settings.get_boolean(["send_email", "enabled"]):
+				body = self._loadFileWithPlaceholders("backup_failed.html")
+				self._sendEmailNotification("OctoPrint Backup Failed", body)
+		else:
+			self._sendNotificationToClient({"notifyTitle": "", "clear_notification": True})
+			self._settings.remove(["notification", "retained_message"])
+			self._settings.save(trigger_event=True)
+			if self._settings.get_boolean(["send_email", "send_successful"]):
+				body = self._loadFileWithPlaceholders("backup_successful.html")
+				self._sendEmailNotification("OctoPrint Backup Successful", body)
 
-    # ~~ Client notifications
+	# ~~ Client notifications
 
-    # send notification to client/browser
-    def _sendNotificationToClient(self, payload, retain = False):
-        if payload["notifyTitle"] == gettext("SMTP Error"):
-            # always send smtp error messages to GUI
-            pass
-        elif not self._settings.get_boolean(["notification", "enabled"]):
-            return
+	# send notification to client/browser
+	def _sendNotificationToClient(self, payload, retain=False):
+		if payload["notifyTitle"] == gettext("SMTP Error"):
+			# always send smtp error messages to GUI
+			pass
+		elif not self._settings.get_boolean(["notification", "enabled"]):
+			return
 
-        self._logger.debug(f"Plugin message: {payload}")
-        if retain:
-            # TODO: add timestamp and append to previous notification message?
-            self._settings.set(["notification", "retained_message"], payload)
-            self._settings.save(trigger_event=True)
-        self._plugin_manager.send_plugin_message(self._identifier, payload)
+		self._logger.debug(f"Plugin message: {payload}")
+		if retain:
+			# TODO: add timestamp and append to previous notification message?
+			self._settings.set(["notification", "retained_message"], payload)
+			self._settings.save(trigger_event=True)
+		self._plugin_manager.send_plugin_message(self._identifier, payload)
 
-    # Load html-template files for mails - {{placeholder}} format for replacement
-    def _loadFileWithPlaceholders(self, filename, placeholders = dict()):
-        returnText = ""
-        file = os.path.join(self._basefolder, "static", "mailtmpl", filename)
-        with open(file, 'r', encoding='utf-8') as f:
-            for row in f:
-                returnText += row
-            for key, value in placeholders.items():
-                returnText = returnText.replace("{{" + key + "}}", value)
-        return returnText
+	# Load html-template files for mails - {{placeholder}} format for replacement
+	def _loadFileWithPlaceholders(self, filename, placeholders=dict()):
+		returnText = ""
+		file = os.path.join(self._basefolder, "static", "mailtmpl", filename)
+		with open(file, 'r', encoding='utf-8') as f:
+			for row in f:
+				returnText += row
+			for key, value in placeholders.items():
+				returnText = returnText.replace("{{" + key + "}}", value)
+		return returnText
 
-    def _sendEmailNotification(self, subject, body):
-        msg = MIMEText(body, "html")
-        msg['Subject'] = subject
-        msg['From'] = self._settings.get(["send_email", "sender"])
-        msg['To'] = self._settings.get(["send_email", "recipient"])
-        # Send the message via an SMTP server
-        try:
-            if self._settings.get_boolean(["send_email", "smtp_tls"]):
-                server =  smtplib.SMTP_SSL()
-            else:
-                server =  smtplib.SMTP()
-            # set host manually to deal with python bug value error, see https://bugs.python.org/issue36094
-            server._host = self._settings.get(["send_email", "smtp_server"])
-            server.connect(self._settings.get(["send_email", "smtp_server"]), self._settings.get_int(["send_email", "smtp_port"]))
-            server.ehlo()
-            if self._settings.get(["send_email", "smtp_user"]) != "":
-                server.login(self._settings.get(["send_email", "smtp_user"]), self._get_encrypted_password())
-            try:
-                server.sendmail(msg['From'], msg['To'], msg.as_string())
-            finally:
-                server.quit()
-        except Exception as e:
-            error_message = str(e)
-            self._logger.error(error_message)
-            data = {"notifyTitle": gettext("SMTP Error"), "notifyMessage": error_message, "notifyType": "error",
-                    "notifyHide": False}
-            self._sendNotificationToClient(data, True)
+	def _sendEmailNotification(self, subject, body, smtp_server=None, smtp_port=None, smtp_tls=None, smtp_user=None,
+							   smtp_password=None, smtp_sender=None, smtp_recipient=None):
+		# fill in values from settings if not supplied
+		smtp_server = smtp_server or self._settings.get(["send_email", "smtp_server"])
+		smtp_port = smtp_port or self._settings.get_int(["send_email", "smtp_port"])
+		smtp_tls = smtp_tls or self._settings.get_boolean(["send_email", "smtp_tls"])
+		smtp_user = smtp_user or self._settings.get(["send_email", "smtp_user"])
+		smtp_password = smtp_password or self._settings.get(["send_email", "smtp_password"])
+		smtp_sender = smtp_sender or self._settings.get(["send_email", "sender"])
+		smtp_recipient = smtp_recipient or self._settings.get(["send_email", "recipient"])
 
-    # ~~ Utility Functions
+		try:
+			if smtp_password == "":
+				raise ValueError("SMTP password is empty.")
 
-    def _trim_and_pad(self, data, target_len, padding_byte=b'\x00'):
-        data_len = len(data)
+			msg = MIMEText(body, "html")
+			msg['Subject'] = subject
+			msg['From'] = smtp_sender
+			msg['To'] = smtp_recipient
+		# Send the message via an SMTP server
+			if smtp_tls in valid_boolean_trues:
+				server = smtplib.SMTP_SSL()
+			else:
+				server = smtplib.SMTP()
+			# set host manually to deal with python bug value error, see https://bugs.python.org/issue36094
+			server._host = smtp_server
+			server.connect(smtp_server, int(smtp_port))
+			server.ehlo()
+			if smtp_user != "":
+				server.login(smtp_user, smtp_password)
+			try:
+				server.sendmail(msg['From'], msg['To'], msg.as_string())
+			finally:
+				server.quit()
+			return True
+		except Exception as e:
+			error_message = str(e)
+			self._logger.error(error_message)
+			data = {"notifyTitle": gettext("SMTP Error"), "notifyMessage": error_message, "notifyType": "error",
+					"notifyHide": False}
+			self._sendNotificationToClient(data, True)
+			return False
 
-        if data_len > target_len:
-            return data[:target_len]  # Trim if longer
-        elif data_len < target_len:
-            return data + padding_byte * (target_len - data_len)  # Pad if shorter
-        else:
-            return data  # Return original if already correct length
+	# ~~ ApiPlugin mixin
 
-    # ~~ ApiPlugin mixin
+	def is_api_protected(self) -> bool:
+		return True
 
-    def is_api_protected(self) -> bool:
-        return True
+	def get_api_commands(self):
+		return {'sendTestEmail': ["smtp_server", "smtp_port", "smtp_tls", "smtp_user", "smtp_password", "smtp_sender",
+								  "smtp_recipient"], 'clearRetainedMessage': []}
 
-    def get_api_commands(self):
-        return {'sendTestEmail': [], 'clearRetainedMessage': []}
+	def on_api_command(self, command, data):
+		import flask
+		if not Permissions.ADMIN.can():
+			return flask.make_response("Insufficient rights", 403)
 
-    def on_api_command(self, command, data):
-        import flask
-        from octoprint.server import user_permission
-        if not user_permission.can():
-            return flask.make_response("Insufficient rights", 403)
+		if command == "sendTestEmail":
+			self._logger.debug("Sending an Email to test settings.")
+			results = self._sendEmailNotification("OctoPrint Backup: Test Message", "OctoPrint Backup: Test Message",
+										data["smtp_server"], data["smtp_port"], data["smtp_tls"], data["smtp_user"],
+										data["smtp_password"], data["smtp_sender"], data["smtp_recipient"])
+			return flask.jsonify({"success": results})
+		if command == "clearRetainedMessage":
+			self._logger.debug("Clearing retained message")
+			default_settings = self.get_settings_defaults()
+			self._settings.set(["notification", "retained_message"], default_settings.get("notification", {}).get("retained_message"))
+			self._settings.save(trigger_event=True)
+			return flask.jsonify({"success": True})
 
-        if command == "sendTestEmail":
-            self._logger.debug("Send an Email to test settings.")
-            self._sendEmailNotification("OctoPrint Backup: Test Message", "OctoPrint Backup: Test Message")
-            # return flask.jsonify(results)
-        if command == "clearRetainedMessage":
-            self._logger.debug("Clearing retained message")
-            self._settings.remove(["notification", "retained_message"])
-            self._settings.save(trigger_event=True)
-            return flask.jsonify({"success": True})
+	# TemplatePlugin mixin
 
-    # TemplatePlugin mixin
+	def get_template_vars(self):
+		return {"plugin_version": self._plugin_version}
 
-    def get_template_vars(self):
-        return {"plugin_version": self._plugin_version}
+	def is_template_autoescaped(self):
+		return True
 
-    # ~~ AssetPlugin mixin
+	# ~~ AssetPlugin mixin
 
-    def get_assets(self):
-        return dict(
-            js=["js/backupscheduler.js"]
-        )
+	def get_assets(self):
+		return dict(
+			js=["js/backupscheduler.js"]
+		)
 
-    # ~~ Softwareupdate hook
+	# ~~ Softwareupdate hook
 
-    def get_update_information(self):
-        data = dict(
-                displayName="Backup Scheduler",
-                displayVersion=self._plugin_version,
+	def get_update_information(self):
+		data = dict(
+			displayName="Backup Scheduler",
+			displayVersion=self._plugin_version,
 
-                # version check: github repository
-                type="github_release",
-                user="jneilliii",
-                repo="OctoPrint-BackupScheduler",
-                current=self._plugin_version,
-                stable_branch=dict(
-                    name="Stable", branch="master", comittish=["master"]
-                ),
-                prerelease_branches=[
-                    dict(
-                        name="Release Candidate",
-                        branch="rc",
-                        comittish=["rc", "master"],
-                    )
-                ],
-                # update method: pip
-                pip="https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/{target_version}.zip"
-            )
+			# version check: github repository
+			type="github_release",
+			user="jneilliii",
+			repo="OctoPrint-BackupScheduler",
+			current=self._plugin_version,
+			stable_branch=dict(
+				name="Stable", branch="master", comittish=["master"]
+			),
+			prerelease_branches=[
+				dict(
+					name="Release Candidate",
+					branch="rc",
+					comittish=["rc", "master"],
+				)
+			],
+			# update method: pip
+			pip="https://github.com/jneilliii/OctoPrint-BackupScheduler/archive/{target_version}.zip"
+		)
 
-        return dict(backupscheduler=data)
+		return dict(backupscheduler=data)
 
 
 __plugin_name__ = "Backup Scheduler"
 __plugin_pythoncompat__ = ">=2.7,<4"
 
+
 def __plugin_check__():
-    from octoprint.util.version import is_octoprint_compatible
-    compatible = is_octoprint_compatible(">=1.9.0")
-    if not compatible:
-        logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.9.0+")
-    return compatible
+	from octoprint.util.version import is_octoprint_compatible
+	compatible = is_octoprint_compatible(">=1.9.0")
+	if not compatible:
+		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.9.0+")
+	return compatible
+
 
 def __plugin_load__():
-    global __plugin_implementation__
-    __plugin_implementation__ = BackupschedulerPlugin()
+	global __plugin_implementation__
+	__plugin_implementation__ = BackupschedulerPlugin()
 
-    global __plugin_hooks__
-    __plugin_hooks__ = {
-        "octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
-        "octoprint.plugin.backup.after_backup": __plugin_implementation__.after_backup,
-        "octoprint.plugin.backup.additional_excludes": __plugin_implementation__.additional_excludes_hook
-    }
+	global __plugin_hooks__
+	__plugin_hooks__ = {
+		"octoprint.plugin.softwareupdate.check_config": __plugin_implementation__.get_update_information,
+		"octoprint.plugin.backup.after_backup": __plugin_implementation__.after_backup,
+	}

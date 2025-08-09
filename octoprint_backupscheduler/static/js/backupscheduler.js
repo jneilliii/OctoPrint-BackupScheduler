@@ -10,6 +10,7 @@ $(function () {
 
         self.settingsViewModel = parameters[0];
         self.sendTestEmailRunning = ko.observable(false);
+        self.sendTestEmailSuccess = ko.observable(false);
 
         // Hack to remove automatically added Cancel button
 		// See https://github.com/sciactive/pnotify/issues/141
@@ -17,7 +18,7 @@ $(function () {
 
         //send retained notification
         self.onStartupComplete = function () {
-            if (self.settingsViewModel.settings.plugins.backupscheduler.notification.retained_message !== "") {
+            if (self.settingsViewModel.settings.plugins.backupscheduler.notification.retained_message.notifyMessage() != "") {
                 var payload = ko.toJS(self.settingsViewModel.settings.plugins.backupscheduler.notification.retained_message);
                 self.onDataUpdaterPluginMessage("backupscheduler", payload);
             }
@@ -40,6 +41,12 @@ $(function () {
             // exit early if not from this plugin
             if (plugin !== "backupscheduler") {
                 return;
+            }
+
+            // Close any open notifications
+            if(data.clear_notification && typeof self.notification_popup !== "undefined") {
+                self.notification_popup.remove();
+                self.notification_popup = undefined;
             }
 
             // NotificationMessages
@@ -75,19 +82,22 @@ $(function () {
                 });
                 self.notification_popup.get().on('pnotify.cancel', function() {self.resetRetainedNotifyMessageID();});
             }
-
-            if(data.clear_notification && typeof self.notification_popup !== "undefined") {
-                self.notification_popup.remove();
-                self.notification_popup = undefined;
-            }
         };
 
         // Send an Email to test settings
         self.sendTestEmail = function () {
             self.sendTestEmailRunning(true);
-            OctoPrint.simpleApiCommand("backupscheduler", "sendTestEmail", {}).done(function (data) {
-                console.log(data);
+            let payload = {"smtp_server": self.settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_server(),
+                           "smtp_port": self.settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_port(),
+                           "smtp_tls": self.settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_tls(),
+                           "smtp_user": self.settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_user(),
+                           "smtp_password": self.settingsViewModel.settings.plugins.backupscheduler.send_email.smtp_password(),
+                           "smtp_sender": self.settingsViewModel.settings.plugins.backupscheduler.send_email.sender(),
+                           "smtp_recipient": self.settingsViewModel.settings.plugins.backupscheduler.send_email.recipient()}
+            OctoPrint.simpleApiCommand("backupscheduler", "sendTestEmail", payload).done(function (data) {
+                self.sendTestEmailSuccess(data.success)
                 self.sendTestEmailRunning(false);
+                setTimeout(self.sendTestEmailSuccess, 10000, false)
             }).fail(function (data) {
                 self.sendTestEmailRunning(false);
             });
@@ -95,7 +105,9 @@ $(function () {
 
         self.resetRetainedNotifyMessageID = function () {
             OctoPrint.simpleApiCommand("backupscheduler", "clearRetainedMessage", {}).done(function (data) {
-                console.log(data);
+                if (data.success) {
+                    self.settingsViewModel.settings.plugins.backupscheduler.notification.retained_message = {};
+                }
             });
         };
     }

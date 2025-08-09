@@ -240,11 +240,6 @@
         </div>
         <div class="control-group span11"
             data-bind="visible: settingsViewModel.settings.plugins.backupscheduler.send_email.enabled()">
-            <div class="alert alert-info">
-                <i class="fas fa-info-circle"></i>
-                {{ _('The password is stored encrypted and not included in backups.
-                As a result, on restoring a backup you will need to reenter these settings.') }}
-            </div>
             <div class="controls">
                 <label class="checkbox">
                     <input type="checkbox"
@@ -280,14 +275,14 @@
             </div>
             <p>
             <div class="control">
-                <div class="alert alert-danger">
-                    <i class="fa fa-warning"></i>
-                    {{ _('Please save settings before testing!') }}
-                </div>
                 <button class="btn" data-bind="click: sendTestEmail, enable: !sendTestEmailRunning()"><i
                         class="fa fa-spinner fa-spin" data-bind="visible: sendTestEmailRunning" style="display: none;"></i>
                     {{
                     _('Send Test Email') }}</button>
+                <div class="alert alert-success pull-right" data-bind="visible: sendTestEmailSuccess">
+                    <i class="fas fa-info-circle"></i>
+                    {{ _('Test successful, check recipient mailbox. Don\'t forget to save.') }}
+                </div>
             </div>
         </div>
     </div>
