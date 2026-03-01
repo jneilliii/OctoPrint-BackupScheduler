@@ -350,7 +350,7 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 		return 1
 
 	def is_wizard_required(self):
-		return self._wizard_required and self._settings.get_boolean(["send_email", "enabled"]) and is_octoprint_compatible(">=1.12.0")
+		return self._wizard_required and self._settings.get_boolean(["send_email", "enabled"])
 
 	# TemplatePlugin mixin
 
