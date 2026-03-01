@@ -6,17 +6,17 @@ from time import sleep
 
 import octoprint.plugin
 from octoprint.settings import valid_boolean_trues
+from octoprint.util.version import is_octoprint_compatible
 
 from . import schedule
 import threading
 from datetime import datetime
-from octoprint.util import RepeatedTimer, to_str, to_bytes
+from octoprint.util import RepeatedTimer
 from octoprint.access.permissions import Permissions
 import os
 import smtplib
 from email.mime.text import MIMEText
 from flask_babel import gettext
-from cryptography.fernet import Fernet
 
 
 class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
@@ -24,10 +24,12 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 							octoprint.plugin.TemplatePlugin,
 							octoprint.plugin.EventHandlerPlugin,
 							octoprint.plugin.SimpleApiPlugin,
-							octoprint.plugin.StartupPlugin):
+							octoprint.plugin.StartupPlugin,
+							octoprint.plugin.WizardPlugin):
 
 	def __init__(self):
-		self._repeatedtimer = None
+		self._repeated_timer = None
+		self._wizard_required = False
 		self.backup_pending = False
 		self.backup_pending_type = []
 		self.current_settings = None
@@ -37,19 +39,17 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 	# ~~ SettingsPlugin mixin
 
 	def get_settings_version(self):
-		return 3
+		return 4
 
 	def on_settings_migrate(self, target, current):
-		if current is None or current < 3:
-			self._logger.info("Resetting email specific settings to default.")
-			default_settings = self.get_settings_defaults()
-			if current is None or current < 2:
-				self._settings.set(["send_email"], default_settings["send_email"])
-			self._settings.set(["key"], Fernet.generate_key())
-			self._settings.set(["send_email", "smtp_password"], "")
-			data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
-			if os.path.exists(data_filename):
-				os.remove(data_filename)
+		if current is not None:
+			if current < 4:
+				self._settings.set(["send_email", "smtp_password"], "")
+				self._wizard_required = True
+			if current <= 3:
+				data_filename = os.path.join(self.get_plugin_data_folder(), ".data.txt")
+				if os.path.exists(data_filename):
+					os.remove(data_filename)
 
 	def get_settings_defaults(self):
 		return {'installed_version': self._plugin_version,
@@ -64,42 +64,11 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 				'send_email': {"enabled": False, "send_successful": False, "smtp_server": "", "smtp_port": 25,
 							   "smtp_tls": False, "smtp_user": "", "smtp_password": "", "sender": "", "recipient": ""},
 				'notification': {"enabled": True, "retained_message": {"notifyTitle": "", "notifyMessage": "",
-																	   "notifyType": "", "notifyHide": True}}, 'key': ""}
+																	   "notifyType": "", "notifyHide": True}}}
 
 	# blacklist SMTP settings for REST API
 	def get_settings_restricted_paths(self):
 		return {'admin': [["send_email"]]}
-
-	def _decrypt(self, data):
-		if self._settings.get(["key"]) != "":
-			f = Fernet(self._settings.get(["key"]))
-			return to_str(f.decrypt(data)).decode()
-		return data
-
-	def _encrypt(self, data):
-		if self._settings.get(["key"]) != "":
-			f = Fernet(self._settings.get(["key"]))
-			return f.encrypt(to_bytes(data))
-		return data
-
-	def get_settings_preprocessors(self):
-		return {"send_email": {"smtp_password": self._decrypt}}, {"send_email": {"smtp_password": self._encrypt}}
-
-	def on_settings_save(self, data):
-		self._logger.debug(data)
-		if data.get("send_email", {}).get("smtp_password", False):
-			data["send_email"]["smtp_password"] = self._encrypt(to_bytes(data["send_email"]["smtp_password"]))
-			if len(data["send_email"]) == 0:
-				del data["send_email"]
-
-		octoprint.plugin.SettingsPlugin.on_settings_save(self, data)
-		return data
-
-	def on_settings_load(self):
-		data = octoprint.plugin.SettingsPlugin.on_settings_load(self)
-		if data.get("send_email", {}).get("smtp_password", "") != "":
-			data["send_email"]["smtp_password"] = self._decrypt(data["send_email"]["smtp_password"])
-		return data
 
 	# ~ StartupPlugin mixin
 
@@ -148,9 +117,9 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 					schedule.every().day.at(self._settings.get(["monthly", "time"])).do(self._perform_backup,
 																						backup_type="monthly_backups").tag(
 						"backupscheduler")
-				if not self._repeatedtimer and backups_enabled is True:
-					self._repeatedtimer = RepeatedTimer(60, schedule.run_pending)
-					self._repeatedtimer.start()
+				if not self._repeated_timer and backups_enabled is True:
+					self._repeated_timer = RepeatedTimer(60, schedule.run_pending)
+					self._repeated_timer.start()
 			if event == "SettingsUpdated":
 				if self.current_settings != {"daily": self._settings.get(["daily"]),
 											 "weekly": self._settings.get(["weekly"]),
@@ -373,6 +342,16 @@ class BackupschedulerPlugin(octoprint.plugin.SettingsPlugin,
 			self._settings.save(trigger_event=True)
 			return flask.jsonify({"success": True})
 
+		return flask.make_response("Invalid API Request", 400)
+
+	# ~~ WizardPlugin mixin
+
+	def get_wizard_version(self):
+		return 1
+
+	def is_wizard_required(self):
+		return self._wizard_required and self._settings.get_boolean(["send_email", "enabled"])
+
 	# TemplatePlugin mixin
 
 	def get_template_vars(self):
@@ -422,7 +401,6 @@ __plugin_pythoncompat__ = ">=2.7,<4"
 
 
 def __plugin_check__():
-	from octoprint.util.version import is_octoprint_compatible
 	compatible = is_octoprint_compatible(">=1.9.0")
 	if not compatible:
 		logging.getLogger(__name__).info("Backup Scheduler requires OctoPrint 1.9.0+")
